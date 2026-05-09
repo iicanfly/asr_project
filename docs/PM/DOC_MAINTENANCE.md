@@ -1,5 +1,10 @@
 # DOC_MAINTENANCE
 
+## 文档损坏保护补充
+- 只要本轮修改涉及中文 Markdown 文档，提交前默认补一轮：
+  - `python tools/check_doc_corruption.py`
+- 如果检查脚本报出疑似损坏，先修复文档内容，再进入本地 Git 提交。
+
 ## 目的
 - 本文件用于约束 `docs/PM/` 下项目管理文档的维护方式。
 - 目标是让未来每一轮 Codex 会话都能默认维护这些文档，而不是只在需要时临时补写。

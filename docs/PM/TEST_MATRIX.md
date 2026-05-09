@@ -40,6 +40,8 @@
 - 每次改动 `services/asr_service.py` 或实时切片 / 过滤规则后，至少执行：
   - `python -m unittest discover -s .\tests -p "test_*.py"`
   - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py`
+- 每次批量修改中文文档后，至少执行：
+  - `python tools/check_doc_corruption.py`
 
 ### 手工回归补充
 - 停止录音闭环：

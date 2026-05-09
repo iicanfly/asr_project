@@ -51,3 +51,22 @@
   - 待本轮改动跑通后确认。
 - 后续动作：
   - 进入实时转写质量优化第一轮：静音过滤、弱语音与语气词过滤。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 为中文文档写坏风险增加自动保护。
+- 修改内容：
+  - 新增 `tools/check_doc_corruption.py`，默认扫描 Markdown 文档中的异常密集 `?` 问号行。
+  - 新增 `tests/test_doc_corruption_guard.py`，验证保护脚本的判断逻辑。
+  - 在 `README.md`、`AGENTS.md`、`docs/PM/DOC_MAINTENANCE.md`、`docs/PM/TEST_MATRIX.md` 中写入该保护的默认使用方法。
+- 目的：
+  - 降低中文文档在 Windows / PowerShell 编码链路下被写坏后未及时发现的风险。
+- 验证方式：
+  - 运行 `python tools/check_doc_corruption.py`
+  - 运行 `python -m unittest discover -s .\tests -p "test_*.py"`
+- 当前结果：
+  - 后续文档修改前可以快速自检，避免再次把大量 `?` 提交进仓库。
+- 用户反馈：
+  - 用户明确要求加上文档损坏保护。
+- 后续动作：
+  - 后续涉及中文文档批量修改时，默认先跑该检查脚本。

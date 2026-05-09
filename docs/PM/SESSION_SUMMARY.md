@@ -53,3 +53,9 @@
   1. 先做静音过滤 / 弱语音识别的规则升级。
   2. 再做语气词过滤精细化。
   3. 最后进入双层转写与前端替换回写。
+
+## 2026-05-10 / 文档保护补充
+- 已新增 `tools/check_doc_corruption.py`，用于检查中文文档是否被错误写成大量 `?` 问号。
+- 已新增 `tests/test_doc_corruption_guard.py`，用于回归验证该保护脚本的核心判断逻辑。
+- 后续只要修改中文文档，默认应在提交前执行：
+  - `python tools/check_doc_corruption.py`
