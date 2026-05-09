@@ -83,6 +83,43 @@
 - [docs/PM/API_FLOW.md](docs/PM/API_FLOW.md)
 - [docs/PM/KNOWN_ISSUES.md](docs/PM/KNOWN_ISSUES.md)
 
+## 各个 Markdown 文件的作用
+下面这部分给协作者快速说明“每个 md 文件是干什么的”。
+
+仓库根目录：
+- [README.md](README.md)：仓库首页说明，介绍项目目标、环境、协作方式和关键入口。
+- [AGENTS.md](AGENTS.md)：Codex 在本仓库中的默认行为规则，包括 Git、双环境、技能使用和文档维护约定。
+- [CODING_PROTOCOL.md](CODING_PROTOCOL.md)：本地版本管理协作准则，强调任何有效修改都要可回滚。
+- [DEPLOY.md](DEPLOY.md)：部署相关说明。
+- [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)：更完整的部署步骤和部署参考。
+- [Setup_Guide.md](Setup_Guide.md)：环境准备与基础启动说明。
+- [Development_Plan.md](Development_Plan.md)：早期开发规划文档。
+- [Technical_Design.md](Technical_Design.md)：技术设计说明。
+- [Test_Specification.md](Test_Specification.md)：测试规范或历史测试说明。
+- [LLM_Integration_Spec.md](LLM_Integration_Spec.md)：LLM 接入相关说明。
+- 其他中文报告类 `md`：多为阶段性调研、问题排查或部署记录，主要作为背景材料。
+
+`docs/PM/` 目录：
+- [docs/PM/CODEX_PLAYBOOK.md](docs/PM/CODEX_PLAYBOOK.md)：Codex 与项目协作的总手册。
+- [docs/PM/DOC_MAINTENANCE.md](docs/PM/DOC_MAINTENANCE.md)：规定哪些情况下必须同步更新项目文档。
+- [docs/PM/CHANGE_JOURNAL.md](docs/PM/CHANGE_JOURNAL.md)：记录每轮关键修改、用户反馈、效果和后续动作。
+- [docs/PM/BACKLOG.md](docs/PM/BACKLOG.md)：当前待办事项和优先级。
+- [docs/PM/ENV_MATRIX.md](docs/PM/ENV_MATRIX.md)：内网 / 外网差异总表。
+- [docs/PM/TEST_MATRIX.md](docs/PM/TEST_MATRIX.md)：当前必须回归的测试重点。
+- [docs/PM/SESSION_SUMMARY.md](docs/PM/SESSION_SUMMARY.md)：当前阶段结论、阻塞项和近期方向。
+- [docs/PM/SYSTEM_OVERVIEW.md](docs/PM/SYSTEM_OVERVIEW.md)：系统总体结构与主链路说明。
+- [docs/PM/MODULE_INDEX.md](docs/PM/MODULE_INDEX.md)：主要模块 / 文件索引，帮助快速定位代码位置。
+- [docs/PM/FUNCTION_CONTRACTS.md](docs/PM/FUNCTION_CONTRACTS.md)：关键函数的输入、输出、副作用和上下游关系。
+- [docs/PM/CONFIG_MAP.md](docs/PM/CONFIG_MAP.md)：配置项含义、作用范围和代码落点。
+- [docs/PM/API_FLOW.md](docs/PM/API_FLOW.md)：实时转写、上传转写、文档生成等核心数据流。
+- [docs/PM/KNOWN_ISSUES.md](docs/PM/KNOWN_ISSUES.md)：当前已确认的问题、风险和限制。
+
+建议阅读顺序：
+1. 先看 `README.md`
+2. 再看 `AGENTS.md`、`docs/PM/CODEX_PLAYBOOK.md`
+3. 然后看 `BACKLOG.md`、`ENV_MATRIX.md`、`TEST_MATRIX.md`、`SESSION_SUMMARY.md`
+4. 真正开始改代码前，再看 `SYSTEM_OVERVIEW.md`、`MODULE_INDEX.md`、`FUNCTION_CONTRACTS.md`、`API_FLOW.md`
+
 ## 推荐协作方式
 给 Codex 提任务时，推荐尽量说明：
 
