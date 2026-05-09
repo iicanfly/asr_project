@@ -9,6 +9,8 @@ from typing import Sequence
 DEFAULT_FILLER_WORDS = ("嗯", "啊", "呃", "额", "哦", "唔", "嘿", "咳", "呀", "哎", "诶", "欸", "哈")
 DEFAULT_ALLOWED_SHORT_PHRASES = ("好的", "可以", "收到", "是的", "谢谢", "你好", "行的", "没事", "对的")
 BOUNDARY_PUNCTUATION = "，。！？、；：,.!?;:~… "
+SENTENCE_END_PUNCTUATION = "。！？!?；;"
+CONTINUATION_ENDING_CHARS = set("的地得了着呢吗嘛吧啊呀呗么和与及并且而又在将把给让向对")
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,8 @@ class SegmentRewritePolicy:
     min_segment_chunks: int = 2
     min_new_chunks_for_rewrite: int = 2
     finalize_on_tail_silence_min_seconds: float = 4.0
+    finalize_on_tail_silence_min_chars: int = 14
+    sentence_boundary_min_chars: int = 6
     max_segment_seconds: float = 18.0
 
 
@@ -341,6 +345,7 @@ def decide_segment_rewrite(
     segment_chunk_count: int,
     last_rewrite_chunk_count: int,
     latest_chunk_reason: str,
+    current_segment_text: str,
     policy: SegmentRewritePolicy,
 ) -> SegmentRewriteDecision:
     chunk_delta = max(0, segment_chunk_count - last_rewrite_chunk_count)
@@ -350,9 +355,18 @@ def decide_segment_rewrite(
         and chunk_delta >= policy.min_new_chunks_for_rewrite
     )
 
+    refined_segment_text = refine_asr_result_text(current_segment_text)
+    dense_segment_text = collapse_transcript_text(refined_segment_text)
+    segment_has_sentence_boundary = looks_like_sentence_boundary(
+        refined_segment_text,
+        min_chars=policy.sentence_boundary_min_chars,
+    )
+    long_tail_silence_text = len(dense_segment_text) >= policy.finalize_on_tail_silence_min_chars
+
     finalize_for_silence = (
         latest_chunk_reason == "tail_silence_detected"
         and segment_duration_seconds >= policy.finalize_on_tail_silence_min_seconds
+        and (segment_has_sentence_boundary or long_tail_silence_text)
     )
     finalize_for_max_duration = segment_duration_seconds >= policy.max_segment_seconds
     should_finalize_segment = finalize_for_silence or finalize_for_max_duration
@@ -366,6 +380,10 @@ def decide_segment_rewrite(
         reason_parts.append("segment_rewrite_ready")
     if finalize_for_silence:
         reason_parts.append("segment_tail_silence_finalize")
+        if segment_has_sentence_boundary:
+            reason_parts.append("segment_sentence_boundary")
+        elif long_tail_silence_text:
+            reason_parts.append("segment_long_text_boundary")
     if finalize_for_max_duration:
         reason_parts.append("segment_max_duration_finalize")
     if not reason_parts:
@@ -389,6 +407,25 @@ def _normalize_asr_text(text: str) -> str:
     normalized = re.sub(r"\s+", " ", text or "").strip()
     normalized = normalized.replace("。 。", "。").replace("， ，", "，")
     return normalized
+
+
+def collapse_transcript_text(text: str) -> str:
+    return re.sub(rf"[{re.escape(BOUNDARY_PUNCTUATION)}\s]", "", _normalize_asr_text(text))
+
+
+def looks_like_sentence_boundary(text: str, *, min_chars: int = 6) -> bool:
+    refined_text = _normalize_asr_text(text)
+    if not refined_text:
+        return False
+
+    dense_text = collapse_transcript_text(refined_text)
+    if len(dense_text) < min_chars:
+        return False
+
+    if refined_text[-1] in SENTENCE_END_PUNCTUATION:
+        return True
+
+    return dense_text[-1] not in CONTINUATION_ENDING_CHARS
 
 
 def refine_asr_result_text(
@@ -428,7 +465,7 @@ def should_filter_asr_result(text: str, filler_words: Sequence[str] = DEFAULT_FI
     if refined_text in DEFAULT_ALLOWED_SHORT_PHRASES:
         return False
 
-    dense_text = re.sub(rf"[{re.escape(BOUNDARY_PUNCTUATION)}\s]", "", refined_text)
+    dense_text = collapse_transcript_text(refined_text)
     if not dense_text:
         return True
 

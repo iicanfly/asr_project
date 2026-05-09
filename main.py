@@ -266,6 +266,7 @@ def get_or_create_active_segment(session):
             "duration_seconds": 0.0,
             "last_result_id": None,
             "last_rewrite_chunk_count": 0,
+            "latest_display_text": "",
         }
         session['active_segment'] = active_segment
     return active_segment
@@ -385,6 +386,7 @@ def on_audio_stream(data):
             )
             emit("asr_result", partial_payload)
             active_segment['last_result_id'] = partial_payload["result_id"]
+            active_segment['latest_display_text'] = refined_text_result
             logger.info(
                 "ASR 识别成功(原始=%s, 输出=%s, segment=%s, chunks=%s)",
                 text_result[:50] if text_result else "",
@@ -404,6 +406,7 @@ def on_audio_stream(data):
             segment_chunk_count=active_segment['chunk_count'],
             last_rewrite_chunk_count=active_segment['last_rewrite_chunk_count'],
             latest_chunk_reason=chunk_decision.reason,
+            current_segment_text=active_segment.get('latest_display_text', ''),
             policy=SEGMENT_REWRITE_POLICY,
         )
 
@@ -422,6 +425,7 @@ def on_audio_stream(data):
                 emit("asr_result", rewrite_payload)
                 active_segment['last_result_id'] = rewrite_payload["result_id"]
                 active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
+                active_segment['latest_display_text'] = refined_segment_text
                 logger.info(
                     "ASR 段级回写成功(segment=%s, reason=%s, chunks=%s, duration=%.2fs, text=%s)",
                     active_segment['segment_id'],

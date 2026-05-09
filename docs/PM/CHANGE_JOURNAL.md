@@ -139,3 +139,27 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 继续校准段级回写阈值与段落边界，随后进入长时间录音稳定性回归。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第四轮：更稳的段落边界与更自然的文本拼接。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `collapse_transcript_text()` 与 `looks_like_sentence_boundary()`，用于判断段内文本是否更像一个可收尾的句子。
+  - 扩展 `SegmentRewritePolicy` 与 `decide_segment_rewrite()`：尾部静音不再直接结束段，而是要求“句子边界成立”或“文本已足够长”，降低过碎分段风险。
+  - 在 `main.py` 的 `active_segment` 中记录 `latest_display_text`，让段落收尾决策不仅看时长，也参考当前文本形态。
+  - 在 `static/js/app.js` 中新增 `mergeTranscriptText()`，取消中文片段之间一律硬插空格的行为，只在英文 / 数字连续词之间保留空格。
+  - 在 `tests/test_asr_service.py` 中新增文本边界与分段收尾判断测试。
+- 目的：
+  - 让段落边界更接近真实语义停顿，而不是一遇到短静音就过早切段。
+  - 提升同段文本的阅读感，避免中文被拼成一串带空格的碎片。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+  - `node -e "new Function(require('fs').readFileSync('static/js/app.js','utf8')); console.log('app.js syntax OK')"` 通过。
+- 当前结果：
+  - 段落结束条件从“尾部静音 + 时长”升级为“尾部静音 + 文本完成度 / 足够长文本 + 时长”。
+  - 中文实时结果在同段合并时不再默认插入空格，可读性更接近自然书写。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续做长时间录音稳定性回归，并视效果再微调段落边界阈值。

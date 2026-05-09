@@ -368,12 +368,39 @@
 - 主要调用方：
   - `main.py:on_audio_stream()`
 
+### `services/asr_service.py:collapse_transcript_text(text)`
+- 输入：
+  - `text: str`
+- 输出：
+  - 去掉空白与边界标点后的紧凑文本 `str`
+- 作用：
+  - 为语气词过滤、句子边界判断、分段收尾规则提供更稳定的文本长度与尾字符依据。
+- 副作用：
+  - 无
+- 主要调用方：
+  - `should_filter_asr_result()`
+  - `looks_like_sentence_boundary()`
+
+### `services/asr_service.py:looks_like_sentence_boundary(text, min_chars=6)`
+- 输入：
+  - `text: str`
+  - 最小有效字符数阈值
+- 输出：
+  - `bool`
+- 作用：
+  - 判断当前文本是否更像一个可以自然收尾的句子，而不是仍处于口语续说中。
+- 副作用：
+  - 无
+- 主要调用方：
+  - `decide_segment_rewrite()`
+
 ### `services/asr_service.py:decide_segment_rewrite(...)`
 - 输入：
   - 当前段累计时长
   - 当前段 chunk 数
   - 上次回写发生时的 chunk 数
   - 最新 chunk 的触发原因
+  - 当前段最近一次可展示文本
   - `SegmentRewritePolicy`
 - 输出：
   - `SegmentRewriteDecision`
@@ -383,6 +410,7 @@
     - `reason`
 - 作用：
   - 决定当前段是否已经值得做一次“更长上下文回写”，以及是否该结束当前段、等待下一段开始。
+  - 当前版本会把“尾部静音 + 文本完成度 / 足够长文本”一起纳入段落收尾判断。
 - 副作用：
   - 无
 - 主要调用方：

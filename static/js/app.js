@@ -415,7 +415,7 @@ let isRecording = false;
         let lastSpeaker = null;
         let lastMessageTime = 0;
 
-        function buildTranscriptEntry(data, messageId, text, timeStr) {
+function buildTranscriptEntry(data, messageId, text, timeStr) {
             return {
                 id: messageId,
                 speaker: data.speaker_id,
@@ -425,6 +425,25 @@ let isRecording = false;
                 segmentId: data.segment_id || null,
                 resultType: data.result_type || (data.is_final ? 'final' : 'partial')
             };
+        }
+
+        function shouldInsertTranscriptSpace(previousText, nextText) {
+            const prev = (previousText || '').trim();
+            const next = (nextText || '').trim();
+            if (!prev || !next) return false;
+
+            const prevChar = prev.slice(-1);
+            const nextChar = next.charAt(0);
+            const asciiWord = /[A-Za-z0-9]/;
+            return asciiWord.test(prevChar) && asciiWord.test(nextChar);
+        }
+
+        function mergeTranscriptText(previousText, nextText) {
+            const prev = (previousText || '').trim();
+            const next = (nextText || '').trim();
+            if (!prev) return next;
+            if (!next) return prev;
+            return shouldInsertTranscriptSpace(prev, next) ? `${prev} ${next}` : `${prev}${next}`;
         }
 
         function updateMessageUI(messageId, text, time) {
@@ -498,7 +517,7 @@ let isRecording = false;
             );
 
             if (shouldMerge && transcriptData.length > 0) {
-                const mergedText = `${lastEntry.content} ${text}`.trim();
+                const mergedText = mergeTranscriptText(lastEntry.content, text);
                 addMessageUI(data.speaker_id, text, timeStr, true, lastEntry.id);
                 lastEntry.content = mergedText;
                 lastEntry.time = timeStr;
@@ -529,7 +548,7 @@ let isRecording = false;
                 // 合并到最后一个消息气泡
                 const lastMsg = list.lastElementChild;
                 const contentDiv = lastMsg.querySelector('.message-content');
-                contentDiv.innerHTML += ' ' + text;
+                contentDiv.innerText = mergeTranscriptText(contentDiv.innerText, text);
                 const timeTag = lastMsg.querySelector('.time-tag');
                 if (timeTag) timeTag.innerText = time;
             } else {

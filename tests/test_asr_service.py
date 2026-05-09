@@ -1,7 +1,9 @@
 import unittest
 
 from services.asr_service import (
+    collapse_transcript_text,
     extract_audio_features,
+    looks_like_sentence_boundary,
     RealtimeChunkPolicy,
     SegmentRewritePolicy,
     decide_segment_rewrite,
@@ -96,6 +98,16 @@ class FilterResultTests(unittest.TestCase):
         self.assertFalse(should_filter_asr_result("那个我们开始吧"))
 
 
+class TranscriptTextHeuristicTests(unittest.TestCase):
+    def test_collapse_transcript_text_removes_spacing_and_punctuation(self):
+        self.assertEqual(collapse_transcript_text("你好， 世界。"), "你好世界")
+
+    def test_looks_like_sentence_boundary_prefers_complete_text(self):
+        self.assertTrue(looks_like_sentence_boundary("今天的会议先到这里。"))
+        self.assertTrue(looks_like_sentence_boundary("这个方案我们明天继续讨论", min_chars=6))
+        self.assertFalse(looks_like_sentence_boundary("然后我们", min_chars=6))
+
+
 class SegmentRewriteDecisionTests(unittest.TestCase):
     def test_emits_rewrite_after_enough_chunks_and_duration(self):
         decision = decide_segment_rewrite(
@@ -103,6 +115,7 @@ class SegmentRewriteDecisionTests(unittest.TestCase):
             segment_chunk_count=2,
             last_rewrite_chunk_count=0,
             latest_chunk_reason="chunk_duration_reached",
+            current_segment_text="今天我们讨论一下发布计划",
             policy=SegmentRewritePolicy(),
         )
         self.assertTrue(decision.should_emit_rewrite)
@@ -114,10 +127,23 @@ class SegmentRewriteDecisionTests(unittest.TestCase):
             segment_chunk_count=2,
             last_rewrite_chunk_count=0,
             latest_chunk_reason="tail_silence_detected",
+            current_segment_text="今天的讨论先到这里。",
             policy=SegmentRewritePolicy(),
         )
         self.assertTrue(decision.should_emit_rewrite)
         self.assertTrue(decision.should_finalize_segment)
+
+    def test_tail_silence_does_not_finalize_short_incomplete_segment(self):
+        decision = decide_segment_rewrite(
+            segment_duration_seconds=4.5,
+            segment_chunk_count=2,
+            last_rewrite_chunk_count=0,
+            latest_chunk_reason="tail_silence_detected",
+            current_segment_text="然后我们",
+            policy=SegmentRewritePolicy(),
+        )
+        self.assertFalse(decision.should_emit_rewrite)
+        self.assertFalse(decision.should_finalize_segment)
 
     def test_waits_when_segment_is_too_short(self):
         decision = decide_segment_rewrite(
@@ -125,6 +151,7 @@ class SegmentRewriteDecisionTests(unittest.TestCase):
             segment_chunk_count=1,
             last_rewrite_chunk_count=0,
             latest_chunk_reason="waiting_for_more_audio",
+            current_segment_text="开始了",
             policy=SegmentRewritePolicy(),
         )
         self.assertFalse(decision.should_emit_rewrite)
