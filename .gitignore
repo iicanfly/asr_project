@@ -22,7 +22,6 @@ exports/
 *.log
 
 # Secrets / local env
-.env
 .env.*
 
 # OS / IDE
