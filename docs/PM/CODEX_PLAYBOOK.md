@@ -1,146 +1,147 @@
-# Codex Playbook
+# Codex 协作手册
 
-## Purpose
-This file is the persistent collaboration guide for this repository.
-It exists to keep future Codex sessions aligned even when the chat context is short.
+## 目的
+这份文件是本仓库的长期协作说明。
+它的作用是在未来会话上下文较短时，仍然让 Codex 能快速恢复正确的工作方式。
 
-## Core Rules
-- Every code or config change must end with a local Git commit.
-- Remote push is opt-in only. Do not push unless the user explicitly requests it in that round.
-- Preserve both internet and intranet code paths unless the user asks for a unified refactor.
-- When a task can be solved by an installed skill or enabled plugin, use it automatically.
+## 核心规则
+- 任何代码、配置或项目文档改动都必须以本地 Git 提交收尾。
+- 远程 push 采用显式授权机制。只有用户在当轮明确要求时，才能推送远程。
+- 内网与外网代码路径默认都要保留，除非用户明确要求统一重构。
+- 当某项任务可以由已安装技能或已启用插件更高质量完成时，应自动使用它们。
 
-## Default Task Intake
-When the user gives a development task, interpret it with the following fields:
-- Goal: what behavior or artifact must change.
-- Network scope: `internet`, `intranet`, or `shared`.
-- Validation: what observable result proves success.
-- Git scope: local commit only unless remote push is explicitly requested.
+## 默认任务理解方式
+当用户给出一个开发任务时，默认按以下字段理解：
+- 目标：需要修改的行为、功能或产物。
+- 网络范围：`外网`、`内网` 或 `双环境共享`。
+- 验收方式：什么可观察结果可以证明任务完成。
+- Git 范围：默认只做本地提交，除非用户明确允许远程 push。
 
-If the user does not provide all fields, infer them from the repository and state the assumption after acting.
+如果用户没有提供完整信息，应结合仓库现状自行推断，并在执行后说明假设。
 
-## Plugin Routing
+## 插件使用规则
 ### Browser Use
-Use for:
-- Opening or validating the local web app.
-- Clicking through frontend flows.
-- Inspecting rendered UI state in the in-app browser.
-- Reproducing browser-side bugs on `localhost` or `127.0.0.1`.
+适用场景：
+- 打开或验证本地 Web 应用。
+- 检查前端交互流程。
+- 在应用内浏览器里检查渲染结果。
+- 复现 `localhost` 或 `127.0.0.1` 上的浏览器问题。
 
 ### GitHub
-Use for:
-- Pull request review and comment handling.
-- CI failure triage.
-- Repository issue and PR summaries.
-- Draft PR preparation and publication when the user requests it.
+适用场景：
+- Pull Request 评审与评论处理。
+- CI 失败排查。
+- Issue / PR 摘要整理。
+- 在用户要求时准备或发布草稿 PR。
 
-## Installed Skill Routing
+## 已安装技能使用规则
 ### openai-docs
-Use for current official OpenAI API or product guidance.
-Do not rely on memory alone when the answer may have changed.
+用于查询最新的 OpenAI 官方 API 或产品文档。
+凡是可能已变化的信息，不应只依赖记忆回答。
 
 ### transcribe
-Use for:
-- Audio or video to text conversion.
-- Speaker diarization requests.
-- Repeatable transcription runs using the bundled CLI workflow.
+适用场景：
+- 音频或视频转文字。
+- 说话人分离。
+- 需要稳定可重复的 CLI 转写流程。
 
-Default behavior:
-- Prefer deterministic CLI-based runs.
-- Keep output paths stable and review transcript quality.
+默认行为：
+- 优先使用可重复的 CLI 流程。
+- 输出路径保持稳定，并检查转写质量。
 
 ### speech
-Use for:
-- Text-to-speech assets.
-- Demo narration.
-- Accessibility voice output.
+适用场景：
+- 文本转语音。
+- 演示配音。
+- 无障碍语音输出。
 
-Default behavior:
-- Use the bundled CLI flow.
-- Keep text, voice, and instruction choices explicit in the task notes.
+默认行为：
+- 优先使用技能内置 CLI 工作流。
+- 明确记录文本内容、voice 选择和附加指令。
 
 ### playwright
-Use for:
-- Repeatable browser automation from the terminal.
-- Snapshot-driven UI validation.
-- Fast reproduction of click and form flows.
+适用场景：
+- 终端驱动的可重复浏览器自动化。
+- 基于快照的 UI 验证。
+- 快速复现点击、表单、页面流转问题。
 
-Default behavior:
-- Snapshot after significant UI changes.
-- Prefer the skill workflow over ad hoc browser scripting.
+默认行为：
+- 发生明显 UI 变化后重新 snapshot。
+- 优先走技能工作流，而不是临时脚本。
 
 ### playwright-interactive
-Use for:
-- Persistent multi-step frontend debugging.
-- Reusing browser handles across several edits.
-- Heavier UI QA loops where restarting the browser every turn is wasteful.
+适用场景：
+- 多轮前端调试。
+- 在多次修改之间复用浏览器句柄。
+- 前端 QA 循环较重、不适合每轮重开浏览器的任务。
 
-Default behavior:
-- Use only when a persistent interactive browser session will save time.
-- Keep a small QA inventory before signoff.
+默认行为：
+- 仅在持久化浏览器会话确实能节省时间时使用。
+- 收尾前维护一份精简 QA 检查清单。
 
 ### jupyter-notebook
-Use for:
-- Experiment notebooks.
-- Analysis notebooks for ASR quality, chunking, latency, or prompt comparisons.
-- Tutorial-style walkthrough notebooks.
+适用场景：
+- 实验型 Notebook。
+- 针对 ASR 质量、分块、时延、提示词效果的分析 Notebook。
+- 教学或演示型 Notebook。
 
-Default behavior:
-- Prefer scaffolded notebooks and reproducible cell ordering.
+默认行为：
+- 优先使用脚手架模板。
+- 保持可复现的 cell 顺序。
 
 ### sentry
-Use for:
-- Reading current production or staging issues after Sentry is configured.
-- Error triage tied to real runtime failures.
+适用场景：
+- 在 Sentry 已配置后查看当前生产或测试环境问题。
+- 基于真实运行异常做排查。
 
-Default behavior:
-- Treat this as read-only observability.
-- Use JSON output when processing CLI results.
+默认行为：
+- 只做只读观测，不执行写操作。
+- 需要程序化处理结果时，优先使用 JSON 输出。
 
 ### security-best-practices
-Use for:
-- Explicit security review requests.
-- Secure-by-default coding help.
-- Prioritized security findings with actionable fixes.
+适用场景：
+- 明确的安全审查请求。
+- 安全默认配置建议。
+- 需要按优先级输出安全问题和修复建议。
 
-Default behavior:
-- Focus on high-impact issues first.
-- Avoid broad security rewrites unless requested.
+默认行为：
+- 先关注高影响问题。
+- 未经要求，不做大范围安全重构。
 
 ### security-threat-model
-Use for:
-- Explicit threat-modeling requests.
-- Trust boundary and abuse-path analysis for this repository or a submodule.
+适用场景：
+- 明确要求进行威胁建模。
+- 需要针对仓库或子模块分析信任边界与攻击路径。
 
-Default behavior:
-- Ground every claim in repository evidence.
-- Keep assumptions explicit.
+默认行为：
+- 每个结论都要有仓库证据支撑。
+- 明确标注假设前提。
 
-## Recommended Repository Management Files
-Maintain these files over time as the project grows:
-- `docs/PM/BACKLOG.md`: prioritized upcoming tasks.
-- `docs/PM/ENV_MATRIX.md`: differences between internet and intranet behavior, config, dependencies, and deployment constraints.
-- `docs/PM/TEST_MATRIX.md`: what needs manual testing, scripted testing, and environment-specific regression checks.
-- `docs/PM/SESSION_SUMMARY.md`: compact summary of recent decisions, active branches, and current blockers.
-- `docs/PM/ADR/`: architecture decision records for cross-cutting changes.
+## 推荐维护的项目管理文件
+随着项目复杂度增加，建议逐步维护以下文件：
+- `docs/PM/BACKLOG.md`：按优先级维护待办事项。
+- `docs/PM/ENV_MATRIX.md`：记录外网与内网的行为、配置、依赖、部署差异。
+- `docs/PM/TEST_MATRIX.md`：记录手工测试、自动化测试、环境差异回归项。
+- `docs/PM/SESSION_SUMMARY.md`：压缩记录近期决策、当前分支状态、阻塞项。
+- `docs/PM/ADR/`：存放架构决策记录。
 
-## Suggested User-to-Codex Task Format
-Use this format when possible:
-1. Goal
-2. Network scope
-3. Acceptance check
-4. Whether remote push is allowed
+## 建议的用户提需求格式
+如果方便，用户可以尽量按这个格式提任务：
+1. 目标
+2. 网络范围
+3. 验收标准
+4. 是否允许远程 push
 
-Example:
-- Goal: improve realtime ASR buffering stability.
-- Network scope: shared.
-- Acceptance check: no regression in file upload transcription, and websocket updates stay smooth in browser testing.
-- Remote push: no.
+示例：
+- 目标：提升实时 ASR 缓冲稳定性。
+- 网络范围：双环境共享。
+- 验收标准：上传音频转写不回归，浏览器中的 websocket 更新保持平滑。
+- 远程 push：否。
 
-## Suggested Codex Response Format
-For implementation tasks, respond in this order:
-1. Brief task understanding and first action.
-2. Context gathering and assumptions.
-3. Implementation and verification.
-4. Local commit hash.
-5. Whether a remote push is still pending.
+## 建议的 Codex 响应格式
+对于实施类任务，默认按以下顺序回复：
+1. 简述任务理解与第一步动作。
+2. 已收集上下文与关键假设。
+3. 实施过程与验证结果。
+4. 本地提交 commit hash。
+5. 是否仍待用户授权远程 push。

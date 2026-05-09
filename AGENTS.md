@@ -1,33 +1,33 @@
 # AGENTS.md
 
-## Versioning Rule (Must Follow)
-- Any project modification must be recorded in Git version control immediately.
-- At minimum, each dialogue round that introduces changes should end with a commit.
-- Commit messages should clearly describe the round purpose so the full project can be rolled back at any time.
-- Do not push to the remote repository unless the user explicitly requests a push in that round.
+## 版本管理规则（必须遵守）
+- 任何项目修改都必须立即纳入 Git 版本管理。
+- 只要某一轮对话引入了代码、配置或文档变更，该轮结束前至少要形成一次本地提交。
+- 提交信息必须清晰描述本轮变更目的，确保项目在任意时点都可回滚。
+- 未经用户在当轮明确要求，不得向远程仓库执行 push。
 
-## Recommended Round Workflow
-1. Make the requested changes.
-2. Run `git status` and review diffs.
-3. Commit all intended changes with a clear message.
-4. Push only if the user explicitly requests a remote update.
+## 推荐的单轮工作流
+1. 完成用户提出的修改。
+2. 运行 `git status` 并检查差异。
+3. 将本轮应提交的改动做成本地 commit。
+4. 只有在用户明确要求远程更新时，才执行 push。
 
-## Tool and Skill Routing
-- Prefer the `Browser Use` plugin when the task involves opening, testing, clicking, typing, or inspecting a local web page such as `localhost`, `127.0.0.1`, or a file-based UI.
-- Prefer the `GitHub` plugin when the task involves repository triage, pull requests, issues, reviews, or CI diagnostics.
-- Auto-use installed skills when the task clearly matches them, even if the user does not name the skill explicitly.
-- Use `openai-docs` for current OpenAI product and API guidance.
-- Use `transcribe` for audio or video transcription requests, especially batch conversion and diarization.
-- Use `speech` for text-to-speech or voice asset generation.
-- Use `playwright` for terminal-driven browser automation and repeatable UI checks.
-- Use `playwright-interactive` for persistent browser debugging sessions across multiple frontend iterations.
-- Use `jupyter-notebook` for experiment notebooks, exploratory analysis, and reproducible demos.
-- Use `sentry` for read-only production issue inspection when Sentry is configured.
-- Use `security-best-practices` only for explicit secure coding guidance or security review requests.
-- Use `security-threat-model` only for explicit threat-modeling requests.
+## 工具与技能路由规则
+- 当任务涉及打开、测试、点击、输入或检查本地网页（如 `localhost`、`127.0.0.1`、本地前端页面）时，优先使用 `Browser Use` 插件。
+- 当任务涉及仓库排查、Pull Request、Issue、代码评审或 CI 诊断时，优先使用 `GitHub` 插件。
+- 只要任务场景与已安装技能明显匹配，即使用户没有显式点名，也应自动启用对应技能。
+- `openai-docs`：用于查询最新的 OpenAI 产品与 API 官方文档。
+- `transcribe`：用于音频或视频转写，尤其是批量转写与说话人分离。
+- `speech`：用于文本转语音、配音、语音素材生成。
+- `playwright`：用于终端驱动的浏览器自动化与可重复 UI 检查。
+- `playwright-interactive`：用于多轮前端调试中的持久化浏览器会话。
+- `jupyter-notebook`：用于实验型 Notebook、探索分析与可复现演示。
+- `sentry`：用于在已配置 Sentry 时执行只读问题排查。
+- `security-best-practices`：仅用于明确的安全编码指导或安全审查请求。
+- `security-threat-model`：仅用于明确的威胁建模请求。
 
-## Project-Specific Working Norms
-- This repository supports both internet and intranet deployment modes; preserve environment-specific behavior and avoid collapsing the two paths without explicit approval.
-- For changes that affect runtime behavior, verify whether the impact is internet-only, intranet-only, or shared.
-- Keep long-running collaboration context in project files under `docs/PM/` so future sessions can recover quickly with low context overhead.
-- Treat `docs/PM/CODEX_PLAYBOOK.md` as the default reference for task intake, skill usage, and collaboration cadence.
+## 项目专属协作规范
+- 本仓库同时支持外网和内网两种运行模式，未经明确批准，不得擅自合并或抹平环境差异。
+- 涉及运行行为的改动，必须先判断影响范围属于 `外网专属`、`内网专属` 还是 `双环境共享`。
+- 长期协作上下文应沉淀到 `docs/PM/` 目录下的项目管理文件中，避免后续会话因上下文过长而失效。
+- 默认把 `docs/PM/CODEX_PLAYBOOK.md` 视为本仓库的协作说明主文件。
