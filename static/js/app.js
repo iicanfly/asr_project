@@ -10,6 +10,11 @@ let isRecording = false;
 let audioChunks = [];
         let isBackendOnline = false;
         let cacheSaveTimer = null;
+        const storageWarningState = {
+            transcript: false,
+            audio: false,
+            history: false
+        };
 
         const CACHE_KEY = 'voice_system_transcript_cache';
         const AUDIO_CACHE_KEY = 'voice_system_audio_blob';
@@ -79,6 +84,64 @@ let audioChunks = [];
         function cacheOfflineAudioChunk(inputData) {
             if (!shouldBufferAudioLocally()) return;
             audioChunks.push(new Float32Array(inputData));
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes || bytes <= 0) return '0 KB';
+            if (bytes < 1024 * 1024) {
+                return `${(bytes / 1024).toFixed(1)} KB`;
+            }
+            return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+        }
+
+        function showStorageWarning(kind, message) {
+            if (!storageWarningState[kind]) {
+                storageWarningState[kind] = true;
+                console.warn(message);
+            }
+
+            const infoEl = document.getElementById('cache-info');
+            if (infoEl) {
+                infoEl.title = message;
+                infoEl.dataset.warning = 'true';
+                infoEl.style.color = '#e67e22';
+            }
+        }
+
+        function clearStorageWarning(kind) {
+            storageWarningState[kind] = false;
+            if (Object.values(storageWarningState).some(Boolean)) return;
+
+            const infoEl = document.getElementById('cache-info');
+            if (infoEl) {
+                infoEl.title = '';
+                delete infoEl.dataset.warning;
+                infoEl.style.color = '';
+            }
+        }
+
+        function safeSetLocalStorage(key, value, { warningKind, warningMessage } = {}) {
+            try {
+                localStorage.setItem(key, value);
+                if (warningKind) {
+                    clearStorageWarning(warningKind);
+                }
+                return true;
+            } catch (error) {
+                console.error(`localStorage 写入失败: ${key}`, error);
+                if (warningKind && warningMessage) {
+                    showStorageWarning(warningKind, warningMessage);
+                }
+                return false;
+            }
+        }
+
+        function safeRemoveLocalStorage(key) {
+            try {
+                localStorage.removeItem(key);
+            } catch (error) {
+                console.error(`localStorage 删除失败: ${key}`, error);
+            }
         }
 
         window.onload = async () => {
@@ -336,11 +399,18 @@ function stopRecording() {
             
             const reader = new FileReader();
             reader.onload = function() {
-                localStorage.setItem(AUDIO_CACHE_KEY, reader.result);
-                localStorage.setItem(COMP_PROCESSED_KEY, 'false'); // 标记为未补偿
-                console.log("音频已存入本地缓存");
-                updateCacheInfo();
+                const audioSaved = safeSetLocalStorage(AUDIO_CACHE_KEY, reader.result, {
+                    warningKind: 'audio',
+                    warningMessage: '离线补偿音频缓存写入失败，可能是浏览器本地存储空间不足。'
+                });
+
+                if (audioSaved) {
+                    safeSetLocalStorage(COMP_PROCESSED_KEY, 'false');
+                    console.log("音频已存入本地缓存");
+                }
+
                 audioChunks = [];
+                updateCacheInfo();
             };
             reader.readAsDataURL(blob);
         }
@@ -362,7 +432,7 @@ function stopRecording() {
                 uploadCachedAudio();
             } else {
                 // 用户拒绝后，标记为已处理，避免反复弹出
-                localStorage.setItem(COMP_PROCESSED_KEY, 'true');
+                safeSetLocalStorage(COMP_PROCESSED_KEY, 'true');
                 updateCacheInfo();
             }
         }
@@ -383,7 +453,7 @@ function stopRecording() {
                 
                 if (res.ok) {
                     const result = await res.json();
-                    localStorage.setItem(COMP_PROCESSED_KEY, 'true'); // 标记为已补偿
+                    safeSetLocalStorage(COMP_PROCESSED_KEY, 'true'); // 标记为已补偿
                     // 暂时保留原始音频，直到用户手动清空或新录音覆盖
                     updateCacheInfo();
                     
@@ -1001,6 +1071,8 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
                 } catch (e) {
                     console.error('加载历史记录失败:', e);
                     docHistory = [];
+                    safeRemoveLocalStorage(DOC_HISTORY_KEY);
+                    showStorageWarning('history', '历史文档缓存读取失败，已自动忽略损坏缓存。');
                 }
             }
         }
@@ -1015,7 +1087,10 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
             }
 
             // 保存到 localStorage
-            localStorage.setItem(DOC_HISTORY_KEY, JSON.stringify(docHistory));
+            safeSetLocalStorage(DOC_HISTORY_KEY, JSON.stringify(docHistory), {
+                warningKind: 'history',
+                warningMessage: '历史文档缓存写入失败，可能是浏览器本地存储空间不足。'
+            });
         }
 
         function renderDocHistory() {
@@ -1128,7 +1203,10 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
                 docHistory.splice(index, 1);
 
                 // 保存到 localStorage
-                localStorage.setItem(DOC_HISTORY_KEY, JSON.stringify(docHistory));
+                safeSetLocalStorage(DOC_HISTORY_KEY, JSON.stringify(docHistory), {
+                    warningKind: 'history',
+                    warningMessage: '历史文档缓存写入失败，可能是浏览器本地存储空间不足。'
+                });
 
                 // 重新渲染列表
                 renderDocHistory();
@@ -1153,7 +1231,7 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
             docHistory = [];
 
             // 清空 localStorage
-            localStorage.removeItem(DOC_HISTORY_KEY);
+            safeRemoveLocalStorage(DOC_HISTORY_KEY);
 
             // 重新渲染列表
             renderDocHistory();
@@ -1546,8 +1624,11 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
         }
 
         // --- 缓存与持久化 ---
-        function persistCacheNow() {
-            localStorage.setItem(CACHE_KEY, JSON.stringify(transcriptData));
+function persistCacheNow() {
+            safeSetLocalStorage(CACHE_KEY, JSON.stringify(transcriptData), {
+                warningKind: 'transcript',
+                warningMessage: '转写缓存写入失败，可能是浏览器本地存储空间不足；页面刷新后最近结果可能无法恢复。'
+            });
             updateCacheInfo();
         }
 
@@ -1574,26 +1655,32 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
         function loadCache() {
             const cached = localStorage.getItem(CACHE_KEY);
             if (cached) {
-                const data = JSON.parse(cached);
-                if (data.length > 0) {
-                    const list = document.getElementById('transcript-list');
-                    list.innerHTML = '';
-                    transcriptData = [];
-                    lastSpeaker = null;
-                    lastMessageTime = 0;
-                    
-                    data.forEach(d => {
-                        const timeStr = d.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                        // 如果缓存的数据有 ID，使用它；否则生成新的
-                        const msgId = d.id || ++messageIdCounter;
-                        d.id = msgId; // 确保数据有 ID
+                try {
+                    const data = JSON.parse(cached);
+                    if (data.length > 0) {
+                        const list = document.getElementById('transcript-list');
+                        list.innerHTML = '';
+                        transcriptData = [];
+                        lastSpeaker = null;
+                        lastMessageTime = 0;
+                        
+                        data.forEach(d => {
+                            const timeStr = d.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                            // 如果缓存的数据有 ID，使用它；否则生成新的
+                            const msgId = d.id || ++messageIdCounter;
+                            d.id = msgId; // 确保数据有 ID
 
-                        addMessageUI(d.speaker, d.content, timeStr, false, msgId);
+                            addMessageUI(d.speaker, d.content, timeStr, false, msgId);
 
-                        transcriptData.push(d);
-                        lastSpeaker = d.speaker;
-                    });
-                    document.getElementById('minutes-btn').style.display = 'flex';
+                            transcriptData.push(d);
+                            lastSpeaker = d.speaker;
+                        });
+                        document.getElementById('minutes-btn').style.display = 'flex';
+                    }
+                } catch (error) {
+                    console.error('转写缓存解析失败，已忽略损坏缓存', error);
+                    safeRemoveLocalStorage(CACHE_KEY);
+                    showStorageWarning('transcript', '转写缓存读取失败，已自动忽略损坏缓存。');
                 }
             }
         }
@@ -1608,9 +1695,9 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
                 transcriptData = [];
                 lastSpeaker = null;
                 lastMessageTime = 0;
-                localStorage.removeItem(CACHE_KEY);
-                localStorage.removeItem(AUDIO_CACHE_KEY);
-                localStorage.removeItem(COMP_PROCESSED_KEY);
+                safeRemoveLocalStorage(CACHE_KEY);
+                safeRemoveLocalStorage(AUDIO_CACHE_KEY);
+                safeRemoveLocalStorage(COMP_PROCESSED_KEY);
                 document.getElementById('transcript-list').innerHTML = '<div class="empty-state">等待音频输入... 请点击下方"开始录音"或"上传音频"</div>';
                 document.getElementById('minutes-btn').style.display = 'none';
                 document.getElementById('clear-btn').style.display = 'none';
@@ -1622,6 +1709,12 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
         }
 
         function updateCacheInfo() {
-            const size = new Blob([JSON.stringify(transcriptData)]).size;
-            document.getElementById('cache-info').innerText = `${(size / 1024).toFixed(1)} KB`;
+            const transcriptBytes = new Blob([JSON.stringify(transcriptData)]).size;
+            const pendingAudio = localStorage.getItem(AUDIO_CACHE_KEY) || '';
+            const pendingAudioBytes = pendingAudio ? new Blob([pendingAudio]).size : 0;
+            const infoEl = document.getElementById('cache-info');
+            if (!infoEl) return;
+
+            const warningSuffix = Object.values(storageWarningState).some(Boolean) ? ' · 缓存受限' : '';
+            infoEl.innerText = `文本 ${formatBytes(transcriptBytes)} / 音频 ${formatBytes(pendingAudioBytes)}${warningSuffix}`;
         }
