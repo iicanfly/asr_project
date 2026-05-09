@@ -70,3 +70,25 @@
   - 用户明确要求加上文档损坏保护。
 - 后续动作：
   - 后续涉及中文文档批量修改时，默认先跑该检查脚本。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第一轮：静音过滤与弱语音拦截。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增整段音频特征提取：`AudioFeatures`、`extract_audio_features()`。
+  - 新增 `has_usable_speech()` 与 `is_weak_background_audio()`，不再只靠尾部静音判断是否送 ASR。
+  - 扩展 `ChunkDecision`，支持 `drop_buffer` 与音频特征透传。
+  - 在 `main.py` 中接入“弱背景音直接丢弃缓冲”的分支，并把 `rms / peak / active_ratio / voiced_ratio` 打进实时日志。
+  - 在 `tests/test_asr_service.py` 中补充弱背景音丢弃与音频特征判断测试。
+- 目的：
+  - 减少旁边人小声说话、低价值环境弱音、长时间弱噪声进入实时转写主流程。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+- 当前结果：
+  - 实时切片判断从“只看尾部静音”升级成“整段特征 + 尾部静音 + 可用语音强度”。
+  - 对明显弱背景音，系统会在后端直接丢弃缓冲，不再继续积累到一次无效 ASR 请求。
+- 用户反馈：
+  - 待明早实际测试确认。
+- 后续动作：
+  - 继续进入语气词过滤精细化，然后推进双层转写与替换回写。

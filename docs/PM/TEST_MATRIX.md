@@ -51,3 +51,7 @@
   - 当两条结果被合并为同一条消息时，UI 条数与 `transcriptData` 条数应保持一致。
 - 未来替换回写预演：
   - 当后端开始发送 `replace_target_id` 后，前端应替换旧消息而不是新增一条。
+- 静音过滤 / 弱语音专项观察：
+  - 后端日志里应重点看 `Dropping realtime buffer` 与 `Processing realtime chunk` 两类日志。
+  - 观察 `rms / peak / active / voiced` 指标与实际听感是否一致。
+  - 如果旁边人的小声说话明显减少触发，同时主说话人的弱音没有被大量漏掉，说明第一轮阈值方向正确。

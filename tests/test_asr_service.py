@@ -1,9 +1,12 @@
 import unittest
 
 from services.asr_service import (
+    extract_audio_features,
     RealtimeChunkPolicy,
     decide_chunk_processing,
     detect_silence,
+    has_usable_speech,
+    is_weak_background_audio,
     should_filter_asr_result,
 )
 
@@ -42,6 +45,30 @@ class ChunkDecisionTests(unittest.TestCase):
         decision = decide_chunk_processing(speech_audio + tail_silence, policy)
         self.assertTrue(decision.should_process)
         self.assertEqual(decision.reason, "tail_silence_detected")
+
+    def test_weak_background_audio_is_dropped_at_chunk_boundary(self):
+        policy = RealtimeChunkPolicy(chunk_seconds=1.0, max_audio_seconds=30.0)
+        weak_audio = pcm_window(90, 16000 * 2)
+        decision = decide_chunk_processing(weak_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertEqual(decision.reason, "drop_weak_audio_at_chunk_duration")
+
+
+class AudioFeatureTests(unittest.TestCase):
+    def test_feature_extraction_marks_speech_as_usable(self):
+        policy = RealtimeChunkPolicy()
+        speech_audio = pcm_window(900, 2048)
+        features = extract_audio_features(speech_audio)
+        self.assertTrue(has_usable_speech(features, policy))
+        self.assertFalse(is_weak_background_audio(features, policy))
+
+    def test_feature_extraction_marks_background_as_weak(self):
+        policy = RealtimeChunkPolicy()
+        weak_audio = pcm_window(60, 2048)
+        features = extract_audio_features(weak_audio)
+        self.assertFalse(has_usable_speech(features, policy))
+        self.assertTrue(is_weak_background_audio(features, policy))
 
 
 class FilterResultTests(unittest.TestCase):

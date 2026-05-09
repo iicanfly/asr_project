@@ -21,6 +21,24 @@ class RealtimeChunkPolicy:
     silence_threshold: float = 0.001
     peak_threshold: int = 100
     silence_ratio_threshold: float = 0.8
+    speech_rms_threshold: float = 0.004
+    speech_peak_threshold: int = 280
+    min_active_ratio: float = 0.12
+    min_voiced_ratio: float = 0.08
+    weak_audio_rms_threshold: float = 0.0022
+    weak_audio_peak_threshold: int = 180
+    strong_silence_ratio_threshold: float = 0.92
+
+
+@dataclass(frozen=True)
+class AudioFeatures:
+    duration_seconds: float
+    rms: float
+    peak: int
+    active_ratio: float
+    voiced_ratio: float
+    silence_ratio: float
+    frame_count: int
 
 
 @dataclass(frozen=True)
@@ -29,6 +47,8 @@ class ChunkDecision:
     reason: str
     audio_duration_seconds: float
     trailing_silence_detected: bool
+    drop_buffer: bool = False
+    audio_features: AudioFeatures | None = None
 
 
 def add_wav_header(
@@ -107,27 +127,140 @@ def detect_silence(
     return silence_ratio > silence_ratio_threshold
 
 
-def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDecision:
+def extract_audio_features(
+    audio_data: bytes,
+    *,
+    sample_rate: int = 16000,
+    bytes_per_sample: int = 2,
+    frame_size: int = 256,
+    silence_threshold: float = 0.001,
+    peak_threshold: int = 100,
+    speech_rms_threshold: float = 0.004,
+    speech_peak_threshold: int = 280,
+) -> AudioFeatures:
     duration_seconds = pcm_bytes_to_duration_seconds(
+        audio_data,
+        sample_rate=sample_rate,
+        bytes_per_sample=bytes_per_sample,
+    )
+    if not audio_data:
+        return AudioFeatures(duration_seconds, 0.0, 0, 0.0, 0.0, 1.0, 0)
+
+    samples = [
+        int.from_bytes(audio_data[i : i + 2], "little", signed=True)
+        for i in range(0, len(audio_data), 2)
+    ]
+    if not samples:
+        return AudioFeatures(duration_seconds, 0.0, 0, 0.0, 0.0, 1.0, 0)
+
+    overall_rms = (sum(sample ** 2 for sample in samples) / len(samples)) ** 0.5 / 32768.0
+    overall_peak = max(abs(sample) for sample in samples)
+    frame_count = len(samples) // frame_size
+
+    if frame_count <= 0:
+        return AudioFeatures(duration_seconds, overall_rms, overall_peak, 0.0, 0.0, 1.0, 0)
+
+    active_frames = 0
+    voiced_frames = 0
+    silence_frames = 0
+
+    for i in range(frame_count):
+        start = i * frame_size
+        end = start + frame_size
+        frame = samples[start:end]
+        if not frame:
+            continue
+
+        frame_rms = (sum(sample ** 2 for sample in frame) / len(frame)) ** 0.5 / 32768.0
+        frame_peak = max(abs(sample) for sample in frame)
+        is_active = frame_rms >= silence_threshold and frame_peak >= peak_threshold
+        is_voiced = frame_rms >= speech_rms_threshold and frame_peak >= speech_peak_threshold
+
+        if is_active:
+            active_frames += 1
+        else:
+            silence_frames += 1
+
+        if is_voiced:
+            voiced_frames += 1
+
+    return AudioFeatures(
+        duration_seconds=duration_seconds,
+        rms=overall_rms,
+        peak=overall_peak,
+        active_ratio=active_frames / frame_count,
+        voiced_ratio=voiced_frames / frame_count,
+        silence_ratio=silence_frames / frame_count,
+        frame_count=frame_count,
+    )
+
+
+def has_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:
+    return (
+        features.active_ratio >= policy.min_active_ratio
+        or features.voiced_ratio >= policy.min_voiced_ratio
+        or (features.rms >= policy.speech_rms_threshold and features.peak >= policy.speech_peak_threshold)
+    )
+
+
+def is_weak_background_audio(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:
+    return (
+        features.silence_ratio >= policy.strong_silence_ratio_threshold
+        or (
+            features.rms < policy.weak_audio_rms_threshold
+            and features.peak < policy.weak_audio_peak_threshold
+            and features.voiced_ratio < policy.min_voiced_ratio
+        )
+    )
+
+
+def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDecision:
+    features = extract_audio_features(
         audio_data,
         sample_rate=policy.sample_rate,
         bytes_per_sample=policy.bytes_per_sample,
+        frame_size=policy.frame_size,
+        silence_threshold=policy.silence_threshold,
+        peak_threshold=policy.peak_threshold,
+        speech_rms_threshold=policy.speech_rms_threshold,
+        speech_peak_threshold=policy.speech_peak_threshold,
     )
+    duration_seconds = features.duration_seconds
 
     if duration_seconds >= policy.max_audio_seconds:
+        if not has_usable_speech(features, policy):
+            return ChunkDecision(
+                should_process=False,
+                reason="drop_weak_audio_at_max_duration",
+                audio_duration_seconds=duration_seconds,
+                trailing_silence_detected=False,
+                drop_buffer=True,
+                audio_features=features,
+            )
         return ChunkDecision(
             should_process=True,
             reason="max_duration_reached",
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
+            audio_features=features,
         )
 
     if duration_seconds >= policy.chunk_seconds:
+        if not has_usable_speech(features, policy):
+            return ChunkDecision(
+                should_process=False,
+                reason="drop_weak_audio_at_chunk_duration",
+                audio_duration_seconds=duration_seconds,
+                trailing_silence_detected=False,
+                drop_buffer=True,
+                audio_features=features,
+            )
         return ChunkDecision(
             should_process=True,
             reason="chunk_duration_reached",
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
+            audio_features=features,
         )
 
     if duration_seconds < policy.min_audio_seconds:
@@ -136,6 +269,7 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
             reason="below_min_duration",
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
+            audio_features=features,
         )
 
     min_required_bytes = policy.min_speech_frames * 4
@@ -145,6 +279,7 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
             reason="insufficient_frames",
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
+            audio_features=features,
         )
 
     tail_audio = audio_data[-policy.tail_silence_bytes :]
@@ -155,12 +290,29 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
         peak_threshold=policy.peak_threshold,
         silence_ratio_threshold=policy.silence_ratio_threshold,
     )
+    usable_speech = has_usable_speech(features, policy)
+    weak_background = is_weak_background_audio(features, policy)
+
+    if trailing_silence_detected and weak_background and not usable_speech:
+        return ChunkDecision(
+            should_process=False,
+            reason="drop_weak_background_after_tail_silence",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=True,
+            drop_buffer=True,
+            audio_features=features,
+        )
 
     return ChunkDecision(
-        should_process=trailing_silence_detected,
-        reason="tail_silence_detected" if trailing_silence_detected else "waiting_for_more_audio",
+        should_process=trailing_silence_detected and usable_speech,
+        reason=(
+            "tail_silence_detected"
+            if trailing_silence_detected and usable_speech
+            else "waiting_for_more_audio"
+        ),
         audio_duration_seconds=duration_seconds,
         trailing_silence_detected=trailing_silence_detected,
+        audio_features=features,
     )
 
 
