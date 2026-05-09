@@ -7,11 +7,13 @@ let isRecording = false;
         let startTime = 0;
         let timerInterval = null;
 
-        let audioChunks = [];
+let audioChunks = [];
         let isBackendOnline = false;
+        let cacheSaveTimer = null;
 
         const CACHE_KEY = 'voice_system_transcript_cache';
         const AUDIO_CACHE_KEY = 'voice_system_audio_blob';
+        const CACHE_SAVE_DEBOUNCE_MS = 1500;
 
         let messageIdCounter = 0;
 
@@ -70,6 +72,15 @@ let isRecording = false;
             }
         }
 
+        function shouldBufferAudioLocally() {
+            return !isBackendOnline || !(socket && socket.connected);
+        }
+
+        function cacheOfflineAudioChunk(inputData) {
+            if (!shouldBufferAudioLocally()) return;
+            audioChunks.push(new Float32Array(inputData));
+        }
+
         window.onload = async () => {
             initSocketIO();
             initConfigPage();
@@ -80,6 +91,10 @@ let isRecording = false;
 
             setInterval(checkBackendStatus, 5000);
         };
+
+        window.addEventListener('beforeunload', () => {
+            saveCache({ immediate: true });
+        });
 
         // --- 侧边栏切换 ---
         function switchTab(tabId) {
@@ -238,7 +253,7 @@ let isRecording = false;
 
                     const inputData = e.data;
 
-                    audioChunks.push(new Float32Array(inputData));
+                    cacheOfflineAudioChunk(inputData);
 
                     if (socket && socket.connected) {
                         const pcmData = convertFloat32To16BitPCM(inputData);
@@ -258,7 +273,7 @@ let isRecording = false;
 
                     const inputData = e.inputBuffer.getChannelData(0);
 
-                    audioChunks.push(new Float32Array(inputData));
+                    cacheOfflineAudioChunk(inputData);
 
                     if (socket && socket.connected) {
                         const pcmData = convertFloat32To16BitPCM(inputData);
@@ -282,7 +297,7 @@ let isRecording = false;
             }
         }
 
-        function stopRecording() {
+function stopRecording() {
             isRecording = false;
             emitStopRecording();
             
@@ -291,6 +306,7 @@ let isRecording = false;
             if (audioContext) audioContext.close();
 
             saveAudioToLocal();
+            saveCache({ immediate: true });
 
             document.getElementById('record-text').innerText = '继续录音';
             document.getElementById('record-btn').classList.replace('btn-primary', 'btn-danger');
@@ -324,6 +340,7 @@ let isRecording = false;
                 localStorage.setItem(COMP_PROCESSED_KEY, 'false'); // 标记为未补偿
                 console.log("音频已存入本地缓存");
                 updateCacheInfo();
+                audioChunks = [];
             };
             reader.readAsDataURL(blob);
         }
@@ -1529,9 +1546,29 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
         }
 
         // --- 缓存与持久化 ---
-        function saveCache() {
+        function persistCacheNow() {
             localStorage.setItem(CACHE_KEY, JSON.stringify(transcriptData));
             updateCacheInfo();
+        }
+
+        function saveCache(options = {}) {
+            const { immediate = false } = options;
+
+            if (immediate) {
+                if (cacheSaveTimer) {
+                    clearTimeout(cacheSaveTimer);
+                    cacheSaveTimer = null;
+                }
+                persistCacheNow();
+                return;
+            }
+
+            if (cacheSaveTimer) return;
+
+            cacheSaveTimer = setTimeout(() => {
+                cacheSaveTimer = null;
+                persistCacheNow();
+            }, CACHE_SAVE_DEBOUNCE_MS);
         }
 
         function loadCache() {

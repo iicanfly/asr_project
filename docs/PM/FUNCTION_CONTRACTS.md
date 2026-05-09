@@ -222,7 +222,7 @@
   - 创建 `AudioContext`
   - 创建 `AudioWorkletNode` 或 `ScriptProcessorNode`
   - 每次音频回调都可能：
-    - 向 `audioChunks` 累积数据
+    - 在后端离线 / socket 断开时，向 `audioChunks` 累积离线补偿数据
     - 向后端发送 PCM
     - 更新可视化
 - 上游调用方：
@@ -242,11 +242,10 @@
   - 断开音频节点
   - 关闭 `AudioContext`
   - 把当前录音缓存到本地
+  - 强制刷新一次转写缓存
   - 更新 UI
 - 上游调用方：
   - `toggleRecording()`
-- 当前限制：
-  - 当前没有显式向后端发送 `stop_recording`
 
 ### `static/js/app.js:saveAudioToLocal()`
 - 输入：
@@ -256,6 +255,7 @@
 - 副作用：
   - 把本地录音缓存保存到 `localStorage`
   - 把补偿标记设为未处理
+  - 成功写入后清空本轮 `audioChunks` 内存缓存
 - 上游调用方：
   - `stopRecording()`
 
@@ -284,11 +284,10 @@
   - 更新 `lastSpeaker`、`lastMessageTime`
   - 持久化缓存
 - 合并规则：
-  - 同一说话人
-  - 距离上一条小于 10 秒
-- 当前限制：
-  - 没有“替换已有消息”的能力
-  - `is_final` 字段当前未真正驱动不同展示分支
+  - 同一 `segment_id` 时优先继续合并
+  - 新 `segment_id` 时优先新建一条
+  - 其余情况再回退到“同说话人 + 10 秒时间窗”
+  - 中文默认直接拼接，英文 / 数字连续词之间保留空格
 
 ### `static/js/app.js:addMessageUI(speaker, text, time, merge = false, messageId = null)`
 - 输入：
@@ -317,14 +316,15 @@
   - `setupAudioProcessing()`
   - `saveAudioToLocal()`
 
-### `static/js/app.js:saveCache()`
+### `static/js/app.js:saveCache(options = {})`
 - 输入：
-  - 无显式参数，使用 `transcriptData`
+  - 可选参数 `immediate`
 - 输出：
   - 无
 - 副作用：
   - 将当前转写列表写入 `localStorage`
   - 更新缓存大小显示
+  - 当前默认采用防抖写入，减少长时间录音中的高频全量缓存写入
 
 ### `static/js/app.js:loadCache()`
 - 输入：
