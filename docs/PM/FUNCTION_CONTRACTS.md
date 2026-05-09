@@ -105,6 +105,7 @@
 - 当前限制：
   - 当前回推结果统一按 `Speaker_1`
   - 当前仍基于启发式规则做分段和回写，不是真正流式增量 ASR
+  - 当用户在处理中的中途点击停止录音时，真正的 session 清理会延迟到当前 chunk 处理完成之后
 
 ### `main.py:get_or_create_active_segment(session)`
 - 输入：
@@ -123,6 +124,20 @@
   - 当当前段不存在时，会原地修改 session，创建一个新的 `active_segment`。
 - 主要调用方：
   - `on_audio_stream()`
+
+### `main.py:on_stop_recording()`
+- 输入：
+  - 当前 Socket session
+- 输出：
+  - 无显式返回值
+- 作用：
+  - 结束实时录音会话，并尝试把剩余短尾音频做最后一次补充转写 / 段级收尾。
+- 副作用：
+  - 可能触发一次 `stop flush` 转写
+  - 可能触发一次强制段级回写
+  - 最终移除 session 并关闭 PCM 文件句柄
+- 当前行为特点：
+  - 如果当前已有 chunk 正在处理，会先标记 `stop_requested`，等当前处理结束后再做收尾和清理
 
 ### `main.py:summarize_meeting()`
 - 输入：
@@ -415,6 +430,19 @@
   - 无
 - 主要调用方：
   - `main.py:on_audio_stream()`
+
+### `services/asr_service.py:decide_stop_flush(audio_data, policy)`
+- 输入：
+  - 停止录音时剩余的 PCM `bytes`
+  - `RealtimeChunkPolicy`
+- 输出：
+  - `ChunkDecision`
+- 作用：
+  - 判断停止录音时剩余的短尾音频是否值得再做一次补充转写，而不是直接清掉。
+- 副作用：
+  - 无
+- 主要调用方：
+  - `main.py:on_stop_recording()`
 
 ### `services/asr_service.py:ASRAdapter.transcribe_audio_bytes(audio_bytes, ...)`
 - 输入：

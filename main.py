@@ -13,11 +13,13 @@ import threading
 import config
 from services.asr_service import (
     ASRAdapter,
+    ChunkDecision,
     RealtimeChunkPolicy,
     SegmentRewritePolicy,
     add_wav_header,
     decide_chunk_processing,
     decide_segment_rewrite,
+    decide_stop_flush,
     refine_asr_result_text,
     should_filter_asr_result,
 )
@@ -222,6 +224,7 @@ class SessionManager:
                     'buffer': bytearray(),
                     'last_process_time': time.time(),
                     'processing': False,
+                    'stop_requested': False,
                     'file_path': file_path,
                     'file_handle': open(file_path, "wb"),
                     'session_tag': timestamp,
@@ -298,60 +301,82 @@ def build_realtime_result_payload(
     }
 
 
-@socketio.on("connect")
-def on_connect():
-    logger.info(f"Socket.IO 客户端已连接: {request.sid}")
-
-
-@socketio.on("disconnect")
-def on_disconnect():
-    sid = request.sid
-    logger.info(f"Socket.IO 客户端已断开: {sid}")
+def cleanup_realtime_session(sid):
     file_path = session_mgr.remove(sid)
     if file_path:
         logger.info(f"录音结束，音频已保存至: {file_path}")
 
 
-@socketio.on("audio_stream")
-def on_audio_stream(data):
-    sid = request.sid
-    session = session_mgr.get_or_create(sid)
+def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision, *, force=False, force_reason=""):
+    if not active_segment or not active_segment.get('last_result_id'):
+        return False
 
-    if not isinstance(data, bytes):
-        emit("asr_result", {"speaker_id": "System", "text": "[数据格式错误]", "is_final": False})
-        return
+    if force:
+        should_emit_rewrite = active_segment['chunk_count'] > active_segment['last_rewrite_chunk_count']
+        rewrite_reason = force_reason or "stop_recording_force_finalize"
+        should_finalize_segment = True
+    else:
+        rewrite_decision = decide_segment_rewrite(
+            segment_duration_seconds=active_segment['duration_seconds'],
+            segment_chunk_count=active_segment['chunk_count'],
+            last_rewrite_chunk_count=active_segment['last_rewrite_chunk_count'],
+            latest_chunk_reason=chunk_decision.reason,
+            current_segment_text=active_segment.get('latest_display_text', ''),
+            policy=SEGMENT_REWRITE_POLICY,
+        )
+        should_emit_rewrite = rewrite_decision.should_emit_rewrite
+        should_finalize_segment = rewrite_decision.should_finalize_segment
+        rewrite_reason = rewrite_decision.reason
 
-    fh = session['file_handle']
-    fh.write(data)
-    fh.flush()
-
-    session['buffer'].extend(data)
-
-    if session['processing']:
-        return
-
-    current_time = time.time()
-    chunk_decision = decide_chunk_processing(bytes(session['buffer']), REALTIME_CHUNK_POLICY)
-
-    if not chunk_decision.should_process:
-        if chunk_decision.drop_buffer:
-            features = chunk_decision.audio_features
-            logger.info(
-                "Dropping realtime buffer sid=%s reason=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f",
-                sid,
-                chunk_decision.reason,
-                chunk_decision.audio_duration_seconds,
-                features.rms if features else 0.0,
-                features.peak if features else 0,
-                features.active_ratio if features else 0.0,
-                features.voiced_ratio if features else 0.0,
+    if should_emit_rewrite:
+        segment_text_result = transcribe_realtime_chunk(bytes(active_segment['audio_buffer']))
+        refined_segment_text = refine_asr_result_text(segment_text_result)
+        if refined_segment_text and not should_filter_asr_result(refined_segment_text):
+            rewrite_payload = build_realtime_result_payload(
+                session,
+                refined_segment_text,
+                chunk_decision,
+                segment_id=active_segment['segment_id'],
+                replace_target_id=active_segment['last_result_id'],
+                result_type="segment_rewrite",
             )
-            session['buffer'].clear()
-        return
+            emit("asr_result", rewrite_payload)
+            active_segment['last_result_id'] = rewrite_payload["result_id"]
+            active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
+            active_segment['latest_display_text'] = refined_segment_text
+            logger.info(
+                "ASR 段级回写成功(segment=%s, reason=%s, chunks=%s, duration=%.2fs, text=%s)",
+                active_segment['segment_id'],
+                rewrite_reason,
+                active_segment['chunk_count'],
+                active_segment['duration_seconds'],
+                refined_segment_text[:50],
+            )
+        elif segment_text_result:
+            logger.info(
+                "ASR 段级回写结果被过滤(segment=%s, reason=%s, 原始=%s, 清洗后=%s)",
+                active_segment['segment_id'],
+                rewrite_reason,
+                segment_text_result[:50],
+                refined_segment_text[:50] if refined_segment_text else "",
+            )
 
-    audio_data = bytes(session['buffer'])
-    session['buffer'].clear()
-    session['last_process_time'] = current_time
+    if should_finalize_segment:
+        logger.info(
+            "Finalizing realtime segment sid=%s segment=%s reason=%s chunks=%s duration=%.2fs",
+            sid,
+            active_segment['segment_id'],
+            rewrite_reason,
+            active_segment['chunk_count'],
+            active_segment['duration_seconds'],
+        )
+        session['active_segment'] = None
+
+    return should_emit_rewrite
+
+
+def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision, *, finalize_after_processing=False):
+    session['last_process_time'] = time.time()
     session['processing'] = True
     session['chunk_seq'] += 1
     active_segment = get_or_create_active_segment(session)
@@ -401,63 +426,141 @@ def on_audio_stream(data):
                 refined_text_result[:50] if refined_text_result else "",
             )
 
-        rewrite_decision = decide_segment_rewrite(
-            segment_duration_seconds=active_segment['duration_seconds'],
-            segment_chunk_count=active_segment['chunk_count'],
-            last_rewrite_chunk_count=active_segment['last_rewrite_chunk_count'],
-            latest_chunk_reason=chunk_decision.reason,
-            current_segment_text=active_segment.get('latest_display_text', ''),
-            policy=SEGMENT_REWRITE_POLICY,
+        emit_segment_rewrite_if_needed(
+            session,
+            sid,
+            active_segment,
+            chunk_decision,
+            force=finalize_after_processing,
+            force_reason="stop_recording_finalize_segment" if finalize_after_processing else "",
         )
-
-        if rewrite_decision.should_emit_rewrite and active_segment.get('last_result_id'):
-            segment_text_result = transcribe_realtime_chunk(bytes(active_segment['audio_buffer']))
-            refined_segment_text = refine_asr_result_text(segment_text_result)
-            if refined_segment_text and not should_filter_asr_result(refined_segment_text):
-                rewrite_payload = build_realtime_result_payload(
-                    session,
-                    refined_segment_text,
-                    chunk_decision,
-                    segment_id=active_segment['segment_id'],
-                    replace_target_id=active_segment['last_result_id'],
-                    result_type="segment_rewrite",
-                )
-                emit("asr_result", rewrite_payload)
-                active_segment['last_result_id'] = rewrite_payload["result_id"]
-                active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
-                active_segment['latest_display_text'] = refined_segment_text
-                logger.info(
-                    "ASR 段级回写成功(segment=%s, reason=%s, chunks=%s, duration=%.2fs, text=%s)",
-                    active_segment['segment_id'],
-                    rewrite_decision.reason,
-                    active_segment['chunk_count'],
-                    active_segment['duration_seconds'],
-                    refined_segment_text[:50],
-                )
-            elif segment_text_result:
-                logger.info(
-                    "ASR 段级回写结果被过滤(segment=%s, reason=%s, 原始=%s, 清洗后=%s)",
-                    active_segment['segment_id'],
-                    rewrite_decision.reason,
-                    segment_text_result[:50],
-                    refined_segment_text[:50] if refined_segment_text else "",
-                )
-
-        if rewrite_decision.should_finalize_segment:
-            logger.info(
-                "Finalizing realtime segment sid=%s segment=%s reason=%s chunks=%s duration=%.2fs",
-                sid,
-                active_segment['segment_id'],
-                rewrite_decision.reason,
-                active_segment['chunk_count'],
-                active_segment['duration_seconds'],
-            )
-            session['active_segment'] = None
     except Exception as e:
         logger.exception(f"ASR API 调用失败: {e}")
         emit("asr_error", {"message": "实时转写失败，请稍后重试。"})
     finally:
         session['processing'] = False
+
+
+def flush_pending_realtime_buffer(session, sid, *, force_finalize_segment=False):
+    pending_audio = bytes(session['buffer'])
+    if not pending_audio:
+        return False
+
+    chunk_decision = decide_stop_flush(pending_audio, REALTIME_CHUNK_POLICY)
+    session['buffer'].clear()
+
+    if not chunk_decision.should_process:
+        if chunk_decision.drop_buffer:
+            features = chunk_decision.audio_features
+            logger.info(
+                "Dropping stop flush buffer sid=%s reason=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f",
+                sid,
+                chunk_decision.reason,
+                chunk_decision.audio_duration_seconds,
+                features.rms if features else 0.0,
+                features.peak if features else 0,
+                features.active_ratio if features else 0.0,
+                features.voiced_ratio if features else 0.0,
+            )
+        return False
+
+    process_realtime_audio_chunk(
+        session,
+        sid,
+        pending_audio,
+        chunk_decision,
+        finalize_after_processing=force_finalize_segment,
+    )
+    return True
+
+
+def finalize_active_segment_on_stop(session, sid):
+    active_segment = session.get('active_segment')
+    if not active_segment:
+        return
+
+    stop_chunk_decision = ChunkDecision(
+        should_process=False,
+        reason="stop_recording_finalize_segment",
+        audio_duration_seconds=active_segment['duration_seconds'],
+        trailing_silence_detected=False,
+    )
+    emit_segment_rewrite_if_needed(
+        session,
+        sid,
+        active_segment,
+        stop_chunk_decision,
+        force=True,
+        force_reason="stop_recording_finalize_segment",
+    )
+    if session.get('active_segment') is active_segment:
+        logger.info(
+            "Finalizing realtime segment sid=%s segment=%s reason=stop_recording_finalize_segment chunks=%s duration=%.2fs",
+            sid,
+            active_segment['segment_id'],
+            active_segment['chunk_count'],
+            active_segment['duration_seconds'],
+        )
+        session['active_segment'] = None
+
+
+@socketio.on("connect")
+def on_connect():
+    logger.info(f"Socket.IO 客户端已连接: {request.sid}")
+
+
+@socketio.on("disconnect")
+def on_disconnect():
+    sid = request.sid
+    logger.info(f"Socket.IO 客户端已断开: {sid}")
+    cleanup_realtime_session(sid)
+
+
+@socketio.on("audio_stream")
+def on_audio_stream(data):
+    sid = request.sid
+    session = session_mgr.get_or_create(sid)
+
+    if not isinstance(data, bytes):
+        emit("asr_result", {"speaker_id": "System", "text": "[数据格式错误]", "is_final": False})
+        return
+
+    fh = session['file_handle']
+    fh.write(data)
+    fh.flush()
+
+    session['buffer'].extend(data)
+
+    if session['processing']:
+        return
+
+    current_time = time.time()
+    chunk_decision = decide_chunk_processing(bytes(session['buffer']), REALTIME_CHUNK_POLICY)
+
+    if not chunk_decision.should_process:
+        if chunk_decision.drop_buffer:
+            features = chunk_decision.audio_features
+            logger.info(
+                "Dropping realtime buffer sid=%s reason=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f",
+                sid,
+                chunk_decision.reason,
+                chunk_decision.audio_duration_seconds,
+                features.rms if features else 0.0,
+                features.peak if features else 0,
+                features.active_ratio if features else 0.0,
+                features.voiced_ratio if features else 0.0,
+            )
+            session['buffer'].clear()
+        return
+
+    audio_data = bytes(session['buffer'])
+    session['buffer'].clear()
+    process_realtime_audio_chunk(session, sid, audio_data, chunk_decision)
+
+    if session.get('stop_requested'):
+        flush_pending_realtime_buffer(session, sid, force_finalize_segment=True)
+        finalize_active_segment_on_stop(session, sid)
+        cleanup_realtime_session(sid)
 
 
 @socketio.on("stop_recording")
@@ -472,9 +575,16 @@ def on_stop_recording():
             pending_seconds,
             session.get('processing', False),
         )
-    file_path = session_mgr.remove(sid)
-    if file_path:
-        logger.info(f"录音结束，音频已保存至: {file_path}")
+        session['stop_requested'] = True
+
+        if session.get('processing', False):
+            logger.info("stop_recording 延迟清理 sid=%s，等待当前 chunk 处理完成", sid)
+            return
+
+        flush_pending_realtime_buffer(session, sid, force_finalize_segment=True)
+        finalize_active_segment_on_stop(session, sid)
+
+    cleanup_realtime_session(sid)
 
 
 @app.route("/api/v1/llm/summarize", methods=["POST"])

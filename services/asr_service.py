@@ -18,6 +18,7 @@ class RealtimeChunkPolicy:
     min_audio_seconds: float = 1.0
     max_audio_seconds: float = 30.0
     chunk_seconds: float = 10.0
+    stop_flush_min_seconds: float = 0.35
     min_speech_frames: int = 100
     tail_silence_bytes: int = 4000
     sample_rate: int = 16000
@@ -393,6 +394,56 @@ def decide_segment_rewrite(
         should_emit_rewrite=should_emit_rewrite,
         should_finalize_segment=should_finalize_segment,
         reason="+".join(reason_parts),
+    )
+
+
+def decide_stop_flush(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDecision:
+    features = extract_audio_features(
+        audio_data,
+        sample_rate=policy.sample_rate,
+        bytes_per_sample=policy.bytes_per_sample,
+        frame_size=policy.frame_size,
+        silence_threshold=policy.silence_threshold,
+        peak_threshold=policy.peak_threshold,
+        speech_rms_threshold=policy.speech_rms_threshold,
+        speech_peak_threshold=policy.speech_peak_threshold,
+    )
+    duration_seconds = features.duration_seconds
+
+    if duration_seconds <= 0:
+        return ChunkDecision(
+            should_process=False,
+            reason="stop_flush_empty_buffer",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=False,
+            audio_features=features,
+        )
+
+    if duration_seconds < policy.stop_flush_min_seconds:
+        return ChunkDecision(
+            should_process=False,
+            reason="stop_flush_below_min_duration",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=False,
+            audio_features=features,
+        )
+
+    if is_weak_background_audio(features, policy) or not has_usable_speech(features, policy):
+        return ChunkDecision(
+            should_process=False,
+            reason="stop_flush_drop_weak_audio",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=False,
+            drop_buffer=True,
+            audio_features=features,
+        )
+
+    return ChunkDecision(
+        should_process=True,
+        reason="stop_flush_pending_audio",
+        audio_duration_seconds=duration_seconds,
+        trailing_silence_detected=False,
+        audio_features=features,
     )
 
 

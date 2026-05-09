@@ -185,3 +185,27 @@
   - 待明早真实长录音测试确认。
 - 后续动作：
   - 继续观察长时间录音下的浏览器内存、缓存大小与回写延迟是否稳定。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第六轮：停止录音时的尾段 flush 与最终收尾。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `decide_stop_flush()`，专门判断 `stop_recording` 时剩余短尾音频是否值得补做一次转写。
+  - `RealtimeChunkPolicy` 新增 `stop_flush_min_seconds`，让“停止录音时的尾段补转写”与常规切片阈值解耦。
+  - 在 `main.py` 中抽出实时 chunk 处理与段级回写逻辑，供常规切片和 `stop_recording` 尾段复用。
+  - `stop_recording` 现在会优先尝试处理剩余缓冲；如果当前已有活动段，还会在结束前做一次强制段级收尾，尽量减少最后一句丢尾或来不及回写的问题。
+  - 如果用户在某个 chunk 正在处理时点击停止录音，后端会延迟清理到当前处理完成之后，再做尾段 flush / 段落收尾。
+  - 在 `tests/test_asr_service.py` 中新增 stop flush 规则测试。
+- 目的：
+  - 降低“刚说完一句就立刻点停止，最后一小段没被识别出来”的概率。
+  - 让停止录音成为一个更完整的会话收尾动作，而不只是简单清理 session。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+- 当前结果：
+  - 停止录音时，短但有效的尾音现在有机会被补做一次实时转写。
+  - 结束前如果段内还有未被更长上下文覆盖的新内容，也会争取补一轮最终段级回写。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续结合真实口语录音观察 stop flush 阈值是否偏松或偏紧。

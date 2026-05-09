@@ -8,6 +8,7 @@ from services.asr_service import (
     SegmentRewritePolicy,
     decide_segment_rewrite,
     decide_chunk_processing,
+    decide_stop_flush,
     detect_silence,
     has_usable_speech,
     is_weak_background_audio,
@@ -58,6 +59,28 @@ class ChunkDecisionTests(unittest.TestCase):
         self.assertFalse(decision.should_process)
         self.assertTrue(decision.drop_buffer)
         self.assertEqual(decision.reason, "drop_weak_audio_at_chunk_duration")
+
+    def test_stop_flush_processes_short_usable_tail(self):
+        policy = RealtimeChunkPolicy(stop_flush_min_seconds=0.35)
+        tail_audio = pcm_window(900, int(16000 * 0.45))
+        decision = decide_stop_flush(tail_audio, policy)
+        self.assertTrue(decision.should_process)
+        self.assertEqual(decision.reason, "stop_flush_pending_audio")
+
+    def test_stop_flush_drops_weak_tail(self):
+        policy = RealtimeChunkPolicy(stop_flush_min_seconds=0.35)
+        tail_audio = pcm_window(80, int(16000 * 0.45))
+        decision = decide_stop_flush(tail_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertEqual(decision.reason, "stop_flush_drop_weak_audio")
+
+    def test_stop_flush_ignores_tiny_tail(self):
+        policy = RealtimeChunkPolicy(stop_flush_min_seconds=0.35)
+        tail_audio = pcm_window(1000, int(16000 * 0.2))
+        decision = decide_stop_flush(tail_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertEqual(decision.reason, "stop_flush_below_min_duration")
 
 
 class AudioFeatureTests(unittest.TestCase):
