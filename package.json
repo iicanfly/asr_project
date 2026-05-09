@@ -1,0 +1,44 @@
+{
+  "name": "voice-minutes-system",
+  "version": "0.1.0",
+  "description": "内网离线语音识别及会议纪要系统",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:backend": "python -m PyInstaller --noconfirm --clean --onefile --name voice_backend --distpath backend_dist --workpath backend_build --specpath backend_build main.py",
+    "build:electron": "electron-builder",
+    "dist": "npm run build:backend && npm run build:electron"
+  },
+  "devDependencies": {
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "build": {
+    "appId": "com.internal.voice.minutes",
+    "productName": "内网语音纪要系统",
+    "asarUnpack": [
+      "backend_dist/**"
+    ],
+    "files": [
+      "**/*",
+      "!__pycache__/**",
+      "!backend_build/**",
+      "!temp_audio/**",
+      "!exports/**",
+      "!*.pyc"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}

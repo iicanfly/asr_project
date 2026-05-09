@@ -1,0 +1,10 @@
+{
+    "env":{
+    "ANTHROPIC_AUTH_TOKEN": "82349c3d923345e7b0811d809bab08b6.UKo6ybreyPNDhlJj",
+    "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DASHSCOPE_API_KEY": "sk-e48c0d85555a459a8b5d65ee300ca401"
+  },
+  "model": "opus[1m]"
+}

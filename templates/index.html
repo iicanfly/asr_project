@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>内网语音识别及文档生成系统</title>
+    <script src="/static/js/socket.io.min.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-logo">
+            <img src="logo.jpeg" alt="公司Logo" onerror="this.style.display='none'">
+        </div>
+        <h2>智能文档生成</h2>
+        <div class="menu-item active" onclick="switchTab('realtime')">
+            <span>🎙️</span> 实时转写
+        </div>
+        <div class="menu-item" onclick="switchTab('history')">
+            <span>📂</span> 历史记录
+        </div>
+        <div class="menu-item" onclick="switchTab('config')">
+            <span>⚙️</span> 系统配置
+        </div>
+        
+        <div style="margin-top: auto; padding: 15px; background: rgba(0,0,0,0.2); border-radius: 6px; font-size: 0.75rem;">
+            <div>状态：<span id="system-health">检测中...</span></div>
+            <div style="margin-top: 5px; opacity: 0.6;">内核: Chromium 108 (Win7)</div>
+            <div style="margin-top: 5px; opacity: 0.6;">存储: <span id="cache-info">0 KB</span></div>
+        </div>
+    </div>
+
+    <div class="main-content" id="tab-realtime">
+        <div class="header">
+            <div>
+                <h1 style="margin:0; font-size: 1.4rem; color: var(--primary-color);">实时状态</h1>
+                <div class="status-group">
+                    <span id="backend-status" class="status-badge">后端：连接中...</span>
+                    <span id="asr-status" class="status-badge">ASR：就绪</span>
+                    <span id="record-timer" class="status-badge" style="display:none; background: #fff3cd; color: #856404;">00:00:00</span>
+                </div>
+            </div>
+            <div class="visualizer" id="visualizer">
+                <div class="v-bar"></div><div class="v-bar"></div><div class="v-bar"></div><div class="v-bar"></div><div class="v-bar"></div>
+            </div>
+        </div>
+
+        <div class="content-container">
+            <div class="panel transcript-panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">实时转写内容</h3>
+                    <button id="clear-btn" class="btn" style="padding: 4px 10px; font-size: 0.8rem; display: none;" onclick="clearTranscript()">🆕 新建会话</button>
+                </div>
+                <div id="transcript-list">
+                    <div class="empty-state">等待音频输入... 请点击下方"开始录音"或"上传音频"</div>
+                </div>
+            </div>
+
+            <div class="panel minutes-panel">
+                <h3 id="minutes-panel-title" style="margin-top: 0;">AI 文档生成</h3>
+                <div id="minutes-content" style="flex: 1; overflow-y: auto;">
+                    <div class="empty-state">待转写完成后点击生成</div>
+                </div>
+                <div id="minutes-actions" style="margin-top: 15px; display: none; gap: 10px; flex-direction: column;">
+                    <button class="btn btn-primary" style="width: 100%;" onclick="previewDocument()">👁️ 预览文档</button>
+                    <button class="btn btn-success" style="width: 100%;" onclick="downloadMinutes()">📥 下载 Word 文档</button>
+                    <button class="btn" style="width: 100%; border: 1px solid #ddd;" onclick="copyMinutes()">📋 复制内容</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="btn-group">
+                <button id="record-btn" class="btn btn-danger" onclick="toggleRecording()">
+                    <span id="record-icon">⏺️</span>
+                    <span id="record-text">开始录音</span>
+                </button>
+                <button id="minutes-btn" class="btn btn-primary" style="display: none;" onclick="showDocumentTypeDialog()">
+                    <span>📝</span> 生成文档
+                </button>
+            </div>
+
+            <div class="debug-zone">
+                <span style="font-size: 0.8rem; color: #666;">手动输入：</span>
+                <input type="text" id="manual-input" class="manual-input" placeholder="输入文本内容..." onkeypress="handleInputKeypress(event)">
+                <button class="expand-input-btn" onclick="openInputModal()" title="展开大输入框">⛶</button>
+                <button class="btn" style="padding: 6px 12px; font-size: 0.8rem; border: 1px solid #ddd;" onclick="submitManualInput()">
+                    ➤ 添加
+                </button>
+                <span style="font-size: 0.8rem; color: #666; margin-left: 10px;">调试：</span>
+                <button class="btn" style="padding: 6px 12px; font-size: 0.8rem; border: 1px solid #ddd;" onclick="document.getElementById('file-input').click()">
+                    📁 上传音频
+                </button>
+                <input type="file" id="file-input" accept="audio/*" multiple onchange="handleFileUpload(event)">
+                <div class="upload-progress" id="upload-progress-container">
+                    <div id="progress-bar"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 历史记录面板 -->
+    <div class="main-content" id="tab-history" style="display: none;">
+        <div class="header">
+            <h1 style="margin:0; font-size: 1.4rem; color: var(--primary-color);">历史文档记录</h1>
+            <button id="clear-history-btn" class="btn" style="padding: 6px 12px; font-size: 0.8rem; border: 1px solid #ddd;" onclick="clearAllHistory()">🗑️ 清空历史</button>
+        </div>
+        <div class="panel" style="flex: 1; overflow: hidden;">
+            <div id="history-list">
+                <div class="empty-state">暂无历史文档</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content" id="tab-config" style="display: none;">
+        <div class="header">
+            <h1 style="margin:0; font-size: 1.4rem; color: var(--primary-color);">系统信息</h1>
+        </div>
+        <div class="panel" style="flex: 1;">
+            <div style="max-width: 600px;">
+                <h3 style="border-bottom: 1px solid #eee; padding-bottom: 10px;">服务状态</h3>
+                <div style="margin-bottom: 15px;">
+                    <p style="color: #666; font-size: 0.9rem;">本系统采用 B/S 架构，服务器地址由部署时统一配置，无需在前端手动设置。</p>
+                    <p style="color: #666; font-size: 0.9rem; margin-top: 8px;">如需修改 AI 服务地址或模型，请编辑服务器上的 <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">.env</code> 文件并重启服务。</p>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <button class="btn" onclick="checkBackendStatus()">🔍 刷新状态</button>
+                    <span id="connection-status" style="margin-left: 10px; font-size: 0.9rem;"></span>
+                </div>
+
+                <h3 style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-top: 30px;">模型配置（仅查看）</h3>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">ASR 模型</label>
+                    <input type="text" id="config-asr-url" class="config-input" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5;" value="" readonly>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">LLM 模型</label>
+                    <input type="text" id="config-llm-url" class="config-input" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5;" value="" readonly>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">运行模式</label>
+                    <input type="text" id="config-mode" class="config-input" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5;" value="" readonly>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 文档类型选择弹窗 -->
+    <div id="doc-type-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="margin: 0;">选择文档类型</h2>
+                <button class="modal-close" onclick="closeDocumentTypeDialog()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: #666; margin-bottom: 20px;">请选择要生成的文档类型：</p>
+                <div class="doc-type-options">
+                    <div class="doc-type-card" onclick="generateDocument('meeting')">
+                        <div class="doc-type-icon">📝</div>
+                        <div class="doc-type-title">会议纪要</div>
+                        <div class="doc-type-desc">记录会议讨论内容、决策事项和行动计划</div>
+                    </div>
+                    <div class="doc-type-card" onclick="generateDocument('report')">
+                        <div class="doc-type-icon">✈️</div>
+                        <div class="doc-type-title">出差报告</div>
+                        <div class="doc-type-desc">总结出差目的、行程、成果和建议</div>
+                    </div>
+                    <div class="doc-type-card" onclick="generateDocument('publicity')">
+                        <div class="doc-type-icon">📢</div>
+                        <div class="doc-type-title">宣传报道</div>
+                        <div class="doc-type-desc">生成面向公众的宣传文案和新闻稿</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 文档预览弹窗 -->
+    <div id="preview-modal" class="modal-overlay" style="display: none; z-index: 1010;">
+        <div class="preview-modal-content">
+            <div class="modal-header">
+                <h2 style="margin: 0;">文档预览</h2>
+                <button class="modal-close" onclick="closePreviewModal()">&times;</button>
+            </div>
+            <div class="preview-body">
+                <div id="preview-document" class="word-document">
+                    <!-- Word 风格的文档内容将在这里渲染 -->
+                </div>
+            </div>
+            <div class="preview-feedback">
+                <div class="feedback-header">
+                    <span>📝 不满意？优化生成</span>
+                    <button class="feedback-toggle" onclick="toggleFeedbackPanel()" id="feedback-toggle-btn">展开</button>
+                </div>
+                <div class="feedback-content" id="feedback-content" style="display: none;">
+                    <div class="feedback-options">
+                        <label class="feedback-option">
+                            <input type="radio" name="feedback-preset" value="formal">
+                            <span>更正式一些</span>
+                        </label>
+                        <label class="feedback-option">
+                            <input type="radio" name="feedback-preset" value="detailed">
+                            <span>更详细/展开说明</span>
+                        </label>
+                        <label class="feedback-option">
+                            <input type="radio" name="feedback-preset" value="concise">
+                            <span>更精简/概括要点</span>
+                        </label>
+                        <label class="feedback-option">
+                            <input type="radio" name="feedback-preset" value="custom">
+                            <span>自定义要求</span>
+                        </label>
+                    </div>
+                    <textarea id="feedback-custom-input" class="feedback-textarea" placeholder="请输入您的具体要求，如：增加数据对比、突出某项成果、调整语气风格等..." style="display: none;"></textarea>
+                    <div class="feedback-actions">
+                        <button class="btn" onclick="toggleFeedbackPanel()">取消</button>
+                        <button class="btn btn-primary" onclick="regenerateDocument()">🔄 重新生成</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closePreviewModal()">关闭</button>
+                <button class="btn btn-primary" onclick="downloadMinutes()">下载 Word</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 历史文档侧边抽屉 -->
+    <div id="history-drawer-overlay" class="drawer-overlay" style="display: none;" onclick="closeHistoryDrawer()"></div>
+    <div id="history-drawer" class="drawer" style="display: none;">
+        <div class="drawer-header">
+            <h2 style="margin: 0;">历史文档详情</h2>
+            <button class="drawer-close" onclick="closeHistoryDrawer()">&times;</button>
+        </div>
+        <div class="drawer-content">
+            <div id="drawer-doc-meta" class="doc-meta">
+                <!-- 文档元数据 -->
+            </div>
+            <div id="drawer-doc-body" class="doc-body">
+                <!-- 文档内容 -->
+            </div>
+            <div id="drawer-doc-transcript" class="doc-transcript">
+                <h3>转写记录</h3>
+                <div id="drawer-transcript-list">
+                    <!-- 转写记录列表 -->
+                </div>
+            </div>
+        </div>
+        <div class="drawer-footer">
+            <button class="btn" onclick="closeHistoryDrawer()">关闭</button>
+            <button class="btn btn-primary" id="drawer-preview-btn" onclick="previewHistoryDoc()">👁️ 预览</button>
+            <button class="btn btn-success" id="drawer-download-btn" onclick="downloadHistoryDoc()">📥 下载 Word</button>
+        </div>
+    </div>
+
+    <!-- 大输入框模态框 -->
+    <div class="input-modal-overlay" id="input-modal-overlay">
+        <div class="input-modal">
+            <div class="input-modal-header">
+                <h3>📝 文本输入</h3>
+                <button class="input-modal-close" onclick="closeInputModal()">&times;</button>
+            </div>
+            <div class="input-modal-body">
+                <textarea class="input-modal-textarea" id="modal-input-text" placeholder="请输入您的内容..."></textarea>
+            </div>
+            <div class="input-modal-footer">
+                <button class="btn" onclick="closeInputModal()">取消</button>
+                <button class="btn btn-primary" onclick="submitModalInput()">确认添加</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

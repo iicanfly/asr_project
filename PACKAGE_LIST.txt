@@ -1,0 +1,111 @@
+# 项目打包清单 - Linux服务器部署
+# 创建日期: 2026-04-27
+
+## 必需文件（必须复制到服务器）
+
+### 核心代码文件
+✓ config.py              # 配置文件（部署前需修改大模型地址）
+✓ main.py                # 主程序（已修改为0.0.0.0监听）
+✓ index.html             # 前端页面
+✓ requirements.txt       # Python依赖列表
+✓ logo.jpeg              # Logo图片
+
+### 文档文件
+✓ DEPLOY.md              # 部署指南文档
+✓ PACKAGE_LIST.txt       # 本打包清单
+
+### 目录（需要创建，可以为空）
+✓ temp_audio/            # 音频临时存储目录
+✓ exports/               # 导出文件目录（Word文档）
+
+## 不需要复制的文件/目录
+
+✗ node_modules/          # Node.js依赖（B/S架构不需要）
+✗ package.json           # npm配置文件（不需要）
+✗ package-lock.json      # npm锁文件（不需要）
+✗ src/                   # Electron源代码（不需要）
+✗ backend_build/         # 后端构建文件（不需要）
+✗ backend_dist/          # 后端可执行文件（不需要）
+✗ dist/                  # 前端构建文件（不需要）
+✗ __pycache__/           # Python缓存（会自动生成）
+✗ *.pyc                  # Python编译文件（会自动生成）
+✗ .claude/               # IDE配置（不需要）
+✗ ports.txt              # 端口信息（参考用，不需要）
+
+## 打包命令示例
+
+### Windows PowerShell
+```powershell
+# 创建部署包目录
+New-Item -ItemType Directory -Force -Path "deploy_package"
+
+# 复制必需文件
+Copy-Item config.py deploy_package\
+Copy-Item main.py deploy_package\
+Copy-Item index.html deploy_package\
+Copy-Item requirements.txt deploy_package\
+Copy-Item logo.jpeg deploy_package\
+Copy-Item DEPLOY.md deploy_package\
+Copy-Item PACKAGE_LIST.txt deploy_package\
+
+# 创建空目录
+New-Item -ItemType Directory -Force -Path "deploy_package\temp_audio"
+New-Item -ItemType Directory -Force -Path "deploy_package\exports"
+
+# 压缩为zip
+Compress-Archive -Path deploy_package\* -DestinationPath voice-system-deploy.zip -Force
+```
+
+### Linux/Mac Terminal
+```bash
+# 创建部署包目录
+mkdir -p deploy_package/temp_audio deploy_package/exports
+
+# 复制必需文件
+cp config.py main.py index.html requirements.txt logo.jpeg DEPLOY.md PACKAGE_LIST.txt deploy_package/
+
+# 压缩
+tar -czvf voice-system-deploy.tar.gz deploy_package/
+```
+
+## 上传到服务器的命令
+
+### 使用scp (Windows PowerShell / Linux / Mac)
+```bash
+# 上传压缩包到服务器
+scp voice-system-deploy.zip user@your-server-ip:/home/user/
+
+# 登录服务器解压
+ssh user@your-server-ip
+cd /home/user
+unzip voice-system-deploy.zip
+mv deploy_package 03_Project_video
+cd 03_Project_video
+```
+
+## 部署后检查清单
+
+- [ ] 文件已上传到服务器
+- [ ] config.py中的大模型地址已修改
+- [ ] Python 3.9+ 已安装
+- [ ] 虚拟环境已创建并激活
+- [ ] 依赖包已安装 (pip install -r requirements.txt)
+- [ ] temp_audio和exports目录已创建
+- [ ] 防火墙端口8000已开放
+- [ ] 服务已成功启动
+- [ ] 可以通过浏览器访问
+
+## 文件大小预估
+
+- 源代码文件: ~200 KB
+- 文档: ~50 KB
+- 空目录: 0 KB
+- 总计: ~250 KB（不含虚拟环境和依赖）
+
+## 注意事项
+
+1. **配置文件修改**: 部署前必须在config.py中修改大模型地址
+2. **权限设置**: 确保exports和temp_audio目录有写入权限
+3. **防火墙**: 确保服务器防火墙允许8000端口访问
+4. **网络**: 确保服务器能够访问内网大模型API
+5. **日志**: 建议配置日志轮转，防止磁盘空间不足
