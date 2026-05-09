@@ -473,14 +473,31 @@ let isRecording = false;
                 return;
             }
 
+            const lastEntry = transcriptData.length > 0 ? transcriptData[transcriptData.length - 1] : null;
+            const sameSegmentContinuation = Boolean(
+                lastEntry &&
+                data.segment_id &&
+                lastEntry.segmentId &&
+                data.segment_id === lastEntry.segmentId
+            );
+            const serverDrivenSegmentBoundary = Boolean(
+                lastEntry &&
+                data.segment_id &&
+                lastEntry.segmentId &&
+                data.segment_id !== lastEntry.segmentId
+            );
+
             // 智能分段逻辑：
-            // 1. 同一个说话人
-            // 2. 时间间隔小于 10 秒
-            // 满足以上条件则合并到上一个气泡，否则新建气泡
-            const shouldMerge = lastSpeaker === data.speaker_id && (now - lastMessageTime < 10000);
+            // 1. 如果后端显式给出了相同 segment_id，则强制继续合并到同一个段落
+            // 2. 如果后端显式切换了新的 segment_id，则强制新建段落
+            // 3. 其它情况沿用原有“同说话人 + 10 秒内”规则
+            const shouldMerge = sameSegmentContinuation || (
+                !serverDrivenSegmentBoundary &&
+                lastSpeaker === data.speaker_id &&
+                (now - lastMessageTime < 10000)
+            );
 
             if (shouldMerge && transcriptData.length > 0) {
-                const lastEntry = transcriptData[transcriptData.length - 1];
                 const mergedText = `${lastEntry.content} ${text}`.trim();
                 addMessageUI(data.speaker_id, text, timeStr, true, lastEntry.id);
                 lastEntry.content = mergedText;

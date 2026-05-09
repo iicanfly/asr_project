@@ -54,6 +54,22 @@ class ChunkDecision:
     audio_features: AudioFeatures | None = None
 
 
+@dataclass(frozen=True)
+class SegmentRewritePolicy:
+    min_segment_seconds: float = 6.0
+    min_segment_chunks: int = 2
+    min_new_chunks_for_rewrite: int = 2
+    finalize_on_tail_silence_min_seconds: float = 4.0
+    max_segment_seconds: float = 18.0
+
+
+@dataclass(frozen=True)
+class SegmentRewriteDecision:
+    should_emit_rewrite: bool
+    should_finalize_segment: bool
+    reason: str
+
+
 def add_wav_header(
     pcm_data: bytes,
     sample_rate: int = 16000,
@@ -316,6 +332,49 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
         audio_duration_seconds=duration_seconds,
         trailing_silence_detected=trailing_silence_detected,
         audio_features=features,
+    )
+
+
+def decide_segment_rewrite(
+    *,
+    segment_duration_seconds: float,
+    segment_chunk_count: int,
+    last_rewrite_chunk_count: int,
+    latest_chunk_reason: str,
+    policy: SegmentRewritePolicy,
+) -> SegmentRewriteDecision:
+    chunk_delta = max(0, segment_chunk_count - last_rewrite_chunk_count)
+    enough_for_regular_rewrite = (
+        segment_chunk_count >= policy.min_segment_chunks
+        and segment_duration_seconds >= policy.min_segment_seconds
+        and chunk_delta >= policy.min_new_chunks_for_rewrite
+    )
+
+    finalize_for_silence = (
+        latest_chunk_reason == "tail_silence_detected"
+        and segment_duration_seconds >= policy.finalize_on_tail_silence_min_seconds
+    )
+    finalize_for_max_duration = segment_duration_seconds >= policy.max_segment_seconds
+    should_finalize_segment = finalize_for_silence or finalize_for_max_duration
+
+    should_emit_rewrite = enough_for_regular_rewrite
+    if should_finalize_segment and segment_chunk_count >= policy.min_segment_chunks and chunk_delta > 0:
+        should_emit_rewrite = True
+
+    reason_parts = []
+    if enough_for_regular_rewrite:
+        reason_parts.append("segment_rewrite_ready")
+    if finalize_for_silence:
+        reason_parts.append("segment_tail_silence_finalize")
+    if finalize_for_max_duration:
+        reason_parts.append("segment_max_duration_finalize")
+    if not reason_parts:
+        reason_parts.append("segment_accumulating")
+
+    return SegmentRewriteDecision(
+        should_emit_rewrite=should_emit_rewrite,
+        should_finalize_segment=should_finalize_segment,
+        reason="+".join(reason_parts),
     )
 
 

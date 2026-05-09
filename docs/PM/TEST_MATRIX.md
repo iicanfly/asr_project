@@ -51,6 +51,10 @@
   - 当两条结果被合并为同一条消息时，UI 条数与 `transcriptData` 条数应保持一致。
 - 未来替换回写预演：
   - 当后端开始发送 `replace_target_id` 后，前端应替换旧消息而不是新增一条。
+  - 重点确认：
+    - 同一 `segment_id` 下的小段结果会继续合并到同一条消息中。
+    - `segment_rewrite` 到达后，旧文本会被直接覆盖，而不是变成重复追加。
+    - 新的 `segment_id` 到达后，应新开一条消息，不应继续粘到上一段里。
 - 静音过滤 / 弱语音专项观察：
   - 后端日志里应重点看 `Dropping realtime buffer` 与 `Processing realtime chunk` 两类日志。
   - 观察 `rms / peak / active / voiced` 指标与实际听感是否一致。

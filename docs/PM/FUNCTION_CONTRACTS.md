@@ -61,6 +61,11 @@
     - `processing`
     - `file_path`
     - `file_handle`
+    - `session_tag`
+    - `chunk_seq`
+    - `result_seq`
+    - `segment_seq`
+    - `active_segment`
 - 副作用：
   - 当 session 不存在时，会创建临时 PCM 文件并打开文件句柄
 - 主要调用方：
@@ -92,14 +97,32 @@
   - 前端 `socket.emit('audio_stream', pcmData)`
 - 下游依赖：
   - `SessionManager.get_or_create()`
-  - `detect_silence()`
-  - `add_wav_header()`
-  - `should_filter_asr_result()`
-  - 内外网 ASR 调用分流
+  - `services/asr_service.py:decide_chunk_processing()`
+  - `services/asr_service.py:refine_asr_result_text()`
+  - `services/asr_service.py:should_filter_asr_result()`
+  - `services/asr_service.py:decide_segment_rewrite()`
+  - `ASRAdapter.transcribe_audio_bytes()`
 - 当前限制：
-  - 只支持单层切片转写
   - 当前回推结果统一按 `Speaker_1`
-  - 当前输出统一标记为 `is_final=True`
+  - 当前仍基于启发式规则做分段和回写，不是真正流式增量 ASR
+
+### `main.py:get_or_create_active_segment(session)`
+- 输入：
+  - `session: dict`
+- 输出：
+  - 当前活动段对象，包含：
+    - `segment_id`
+    - `audio_buffer`
+    - `chunk_count`
+    - `duration_seconds`
+    - `last_result_id`
+    - `last_rewrite_chunk_count`
+- 作用：
+  - 为实时会话维护“当前段”的累计上下文，用于后续段级回写和分段边界控制。
+- 副作用：
+  - 当当前段不存在时，会原地修改 session，创建一个新的 `active_segment`。
+- 主要调用方：
+  - `on_audio_stream()`
 
 ### `main.py:summarize_meeting()`
 - 输入：
@@ -331,6 +354,39 @@
   - 包含：`should_process`、`reason`、`audio_duration_seconds`、`trailing_silence_detected`
 - 作用：
   - 统一管理实时转写的切片触发判断，避免阈值和静音逻辑散落在 `main.py` 中。
+
+### `services/asr_service.py:refine_asr_result_text(text, filler_words=...)`
+- 输入：
+  - `text: str`
+  - 可选语气词列表
+- 输出：
+  - 清洗后的文本 `str`
+- 作用：
+  - 在真正决定是否展示前，先去掉结果首尾的明显语气词和多余标点。
+- 副作用：
+  - 无
+- 主要调用方：
+  - `main.py:on_audio_stream()`
+
+### `services/asr_service.py:decide_segment_rewrite(...)`
+- 输入：
+  - 当前段累计时长
+  - 当前段 chunk 数
+  - 上次回写发生时的 chunk 数
+  - 最新 chunk 的触发原因
+  - `SegmentRewritePolicy`
+- 输出：
+  - `SegmentRewriteDecision`
+  - 包含：
+    - `should_emit_rewrite`
+    - `should_finalize_segment`
+    - `reason`
+- 作用：
+  - 决定当前段是否已经值得做一次“更长上下文回写”，以及是否该结束当前段、等待下一段开始。
+- 副作用：
+  - 无
+- 主要调用方：
+  - `main.py:on_audio_stream()`
 
 ### `services/asr_service.py:ASRAdapter.transcribe_audio_bytes(audio_bytes, ...)`
 - 输入：

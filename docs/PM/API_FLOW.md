@@ -50,17 +50,23 @@
 - `main.py` 中的 `on_audio_stream(data)`
 
 当前触发规则：
-1. 如果累计音频长度超过 `ASR_MAX_AUDIO_SECONDS`，强制触发。
-2. 如果累计音频长度超过 `ASR_CHUNK_SECONDS`，触发。
-3. 如果累计音频长度超过 `ASR_MIN_AUDIO_SECONDS`，则进一步根据静音检测决定是否触发。
+1. 统一调用 `services/asr_service.py:decide_chunk_processing()`。
+2. 如果累计音频长度超过 `max_audio_seconds`，强制触发。
+3. 如果累计音频长度超过 `chunk_seconds`，触发。
+4. 如果累计音频长度超过 `min_audio_seconds`，则进一步根据尾部静音、整段 RMS / peak / active_ratio / voiced_ratio 等特征决定：
+   - 是否立即送 ASR
+   - 是否继续等待更多音频
+   - 是否直接把弱背景音缓冲丢弃
 
 当前静音检测逻辑：
 1. 对缓冲区末尾一小段音频调用 `detect_silence()`
-2. `detect_silence()` 会：
+2. 同时对整段音频调用 `extract_audio_features()`
+3. `detect_silence()` 会：
    - 将 PCM bytes 解码为整型样本
    - 分帧计算 RMS 和最大幅值
    - 统计静音帧比例
-3. 静音帧比例大于阈值时，认为当前片段可结束并触发转写。
+4. 静音帧比例大于阈值时，认为当前片段可结束并触发转写。
+5. 如果整段音频被判定为弱背景音，则不会继续进入 ASR 主流程。
 
 ### 后端 ASR 调用阶段
 主要分流依据：
@@ -78,17 +84,22 @@
 
 ### 后端结果过滤与回推阶段
 主要位置：
-- `main.py` 的 `should_filter_asr_result()`
+- `services/asr_service.py` 的 `refine_asr_result_text()` / `should_filter_asr_result()`
 - `main.py` 的 `emit("asr_result", ...)`
 
 当前行为：
 1. 如果识别结果为空，直接丢弃。
-2. 如果命中过滤规则，也不回推到前端。
-3. 其余结果统一以：
+2. 如果结果首尾存在明显语气词，先清洗再判断是否展示。
+3. 如果命中过滤规则，也不回推到前端。
+4. 其余结果统一以：
    - `speaker_id = "Speaker_1"`
    - `text = text_result`
    - `is_final = True`
    的形式推送给前端。
+5. 当段内累计多个 chunk 后，后端还可能再次发出：
+   - `result_type = "segment_rewrite"`
+   - `replace_target_id = 上一次段内结果 id`
+   用更长上下文的识别结果覆盖前面的粗糙文本。
 
 ### 前端结果展示阶段
 入口位置：
@@ -97,17 +108,22 @@
 主要步骤：
 1. 清除空状态占位符。
 2. 生成当前时间戳。
-3. 根据以下条件决定是合并到上一条还是新建一条：
+3. 如果带有 `replace_target_id`，优先替换旧消息。
+4. 如果后端显式给出相同 `segment_id`，则继续合并到同一条消息。
+5. 如果后端显式切换了新的 `segment_id`，则强制新开一条消息。
+6. 其余情况再回退到原有规则：
    - 同一个 `speaker_id`
    - 与上一条间隔小于 10 秒
-4. 调用 `addMessageUI()` 渲染 UI。
-5. 更新 `transcriptData`。
-6. 调用 `saveCache()` 持久化到浏览器 `localStorage`。
+7. 调用 `addMessageUI()` 渲染 UI。
+8. 更新 `transcriptData`。
+9. 调用 `saveCache()` 持久化到浏览器 `localStorage`。
 
 ### 当前链路特点
 - 实时链路本质上是“前端连续送 PCM，后端按阈值切片后再做批量识别”。
 - 当前并不是逐帧流式 ASR，而是“伪流式分段识别 + 前端增量展示”。
-- 当前前端只有“追加 / 合并”逻辑，还没有“旧结果被新结果替换”的机制。
+- 当前已进入“双层结果”形态：
+  - 先用小 chunk 快速出结果
+  - 再用更长段音频发起一次 `segment_rewrite` 覆盖旧结果
 
 ## 2. 上传音频转写链路
 

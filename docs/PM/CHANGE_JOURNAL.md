@@ -115,3 +115,27 @@
   - 待明早实际测试确认。
 - 后续动作：
   - 继续推进“小段结果 -> 大段结果”替换回写与更合理的分段策略。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第三轮：小段结果到大段结果的替换回写最小闭环。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `SegmentRewritePolicy`、`SegmentRewriteDecision` 与 `decide_segment_rewrite()`，把段级回写触发条件抽成可测试规则。
+  - 在 `main.py` 中为每个实时会话增加 `active_segment` 状态，累计多段音频后再发起一次更长片段的 ASR，并通过 `replace_target_id` 回写替换前面的粗结果。
+  - `build_realtime_result_payload()` 现已支持显式传入 `segment_id / replace_target_id / result_type`，用于区分 `segment_partial` 与 `segment_rewrite`。
+  - 在 `static/js/app.js` 中把 `segment_id` 纳入前端分段合并条件：同段强制合并、跨段强制分开，给后端主导段落边界留出空间。
+  - 在 `tests/test_asr_service.py` 中新增段级回写决策测试。
+- 目的：
+  - 让前端先快速看到小段结果，再在更长上下文形成后收到一次更高质量的替换文本。
+  - 顺带为后续“更合理的分段策略”准备后端主导的 `segment_id` 机制。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+  - `node -e "new Function(require('fs').readFileSync('static/js/app.js','utf8')); console.log('app.js syntax OK')"` 通过。
+- 当前结果：
+  - 后端已经可以在段内累计多个小 chunk，并在满足条件时发出 `segment_rewrite` 结果替换前面的段内粗结果。
+  - 前端已经能根据 `segment_id` 区分“继续同一段”还是“开始新一段”，不再只靠 10 秒时间窗。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续校准段级回写阈值与段落边界，随后进入长时间录音稳定性回归。
