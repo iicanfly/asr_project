@@ -36,6 +36,7 @@
 - 只要某一轮工作改变了项目认知、任务优先级、环境差异、测试重点、已知问题或关键链路，就应同步更新 `docs/PM/` 下对应文档，而不是只修改代码。
 - 默认优先维护以下文件：
   - `BACKLOG.md`
+  - `CHANGE_JOURNAL.md`
   - `ENV_MATRIX.md`
   - `TEST_MATRIX.md`
   - `SESSION_SUMMARY.md`

@@ -12,6 +12,8 @@
 ## 什么时候必须更新文档
 - 新增、删除或重排了任务优先级：
   - 更新 `BACKLOG.md`
+- 本轮完成了有效修改，且需要保留“改了什么、反馈如何、效果如何”的演进记录：
+  - 更新 `CHANGE_JOURNAL.md`
 - 新增了内网 / 外网差异，或修正了原有差异判断：
   - 更新 `ENV_MATRIX.md`
 - 新增了必须回归的测试项，或改变了测试重点：
@@ -41,11 +43,12 @@
 ## 默认维护顺序
 每次任务结束后，按以下顺序检查是否要更新：
 1. `SESSION_SUMMARY.md`
-2. `KNOWN_ISSUES.md`
-3. `BACKLOG.md`
-4. `TEST_MATRIX.md`
-5. `ENV_MATRIX.md`
-6. 认知文档：
+2. `CHANGE_JOURNAL.md`
+3. `KNOWN_ISSUES.md`
+4. `BACKLOG.md`
+5. `TEST_MATRIX.md`
+6. `ENV_MATRIX.md`
+7. 认知文档：
    - `SYSTEM_OVERVIEW.md`
    - `MODULE_INDEX.md`
    - `FUNCTION_CONTRACTS.md`

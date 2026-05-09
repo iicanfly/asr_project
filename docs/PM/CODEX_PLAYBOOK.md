@@ -120,6 +120,7 @@
 ## 推荐维护的项目管理文件
 随着项目复杂度增加，建议逐步维护以下文件：
 - `docs/PM/BACKLOG.md`：按优先级维护待办事项。
+- `docs/PM/CHANGE_JOURNAL.md`：记录每轮关键修改、用户反馈、观察到的效果与后续动作。
 - `docs/PM/ENV_MATRIX.md`：记录外网与内网的行为、配置、依赖、部署差异。
 - `docs/PM/TEST_MATRIX.md`：记录手工测试、自动化测试、环境差异回归项。
 - `docs/PM/SESSION_SUMMARY.md`：压缩记录近期决策、当前分支状态、阻塞项。
