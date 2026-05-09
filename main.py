@@ -7,12 +7,17 @@ import logging
 import os
 import io
 import json
-import httpx
-import base64
 import re
 import time
 import threading
 import config
+from services.asr_service import (
+    ASRAdapter,
+    RealtimeChunkPolicy,
+    add_wav_header,
+    decide_chunk_processing,
+    should_filter_asr_result,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("VoiceSystem")
@@ -24,40 +29,17 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 client = OpenAI(api_key=config.API_KEY, base_url=config.BASE_URL)
 
-asr_client = OpenAI(api_key=config.ASR_API_KEY, base_url=config.ASR_BASE_URL)
+asr_adapter = ASRAdapter(
+    asr_mode=config.ASR_MODE,
+    asr_base_url=config.ASR_BASE_URL,
+    asr_model=config.ASR_MODEL,
+    asr_api_key=config.ASR_API_KEY,
+)
 
 TEMP_DIR = config.TEMP_DIR
 EXPORT_DIR = config.EXPORT_DIR
 for d in [TEMP_DIR, EXPORT_DIR]:
     os.makedirs(d, exist_ok=True)
-
-
-def add_wav_header(pcm_data: bytes) -> bytes:
-    sample_rate = 16000
-    num_channels = 1
-    bits_per_sample = 16
-    byte_rate = sample_rate * num_channels * bits_per_sample // 8
-    block_align = num_channels * bits_per_sample // 8
-    data_size = len(pcm_data)
-    file_size = 36 + data_size
-
-    header = bytearray()
-    header += b'RIFF'
-    header += file_size.to_bytes(4, 'little')
-    header += b'WAVE'
-    header += b'fmt '
-    header += (16).to_bytes(4, 'little')
-    header += (1).to_bytes(2, 'little')
-    header += num_channels.to_bytes(2, 'little')
-    header += sample_rate.to_bytes(4, 'little')
-    header += byte_rate.to_bytes(4, 'little')
-    header += block_align.to_bytes(2, 'little')
-    header += bits_per_sample.to_bytes(2, 'little')
-    header += b'data'
-    header += data_size.to_bytes(4, 'little')
-
-    return header + pcm_data
-
 
 def remove_markdown_formatting(text: str) -> str:
     if not text:
@@ -74,23 +56,6 @@ def remove_markdown_formatting(text: str) -> str:
     text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)
     return text
-
-
-def should_filter_asr_result(text: str) -> bool:
-    if not text or not text.strip():
-        return True
-    text = text.strip()
-    filler_words = ['嗯', '啊', '呃', '那', '哦', '唔', '嘿', '咳']
-    filler_count = sum(text.count(word) for word in filler_words)
-    if len(text) > 0 and filler_count / len(text) > 0.5:
-        return True
-    if len(text) >= 3 and len(set(text)) <= 2:
-        return True
-    if len(text) < 2:
-        return True
-    return False
-
-
 def build_transcript_text(transcript, max_chars=10000):
     full_text_list = []
     current_chars = 0
@@ -225,42 +190,12 @@ def get_status():
     })
 
 
-ASR_MIN_AUDIO_SECONDS = 1.0
-ASR_MAX_AUDIO_SECONDS = 30.0
-ASR_CHUNK_SECONDS = 10.0
-SILENCE_THRESHOLD = 0.001
-MIN_SPEECH_FRAMES = 100
-
-
-def detect_silence(audio_data, sample_rate=16000, frame_size=256):
-    """检测音频数据中的静音段"""
-    if len(audio_data) < frame_size:
-        return False
-    
-    samples = [int.from_bytes(audio_data[i:i+2], 'little', signed=True) 
-               for i in range(0, len(audio_data), 2)]
-    
-    num_frames = len(samples) // frame_size
-    silence_frames = 0
-    
-    for i in range(num_frames):
-        start = i * frame_size
-        end = start + frame_size
-        frame = samples[start:end]
-        
-        if not frame:
-            continue
-        
-        rms = (sum(s**2 for s in frame) / len(frame)) ** 0.5
-        max_val = max(abs(s) for s in frame)
-        
-        normalized_rms = rms / 32768.0
-        
-        if normalized_rms < SILENCE_THRESHOLD or max_val < 100:
-            silence_frames += 1
-    
-    silence_ratio = silence_frames / max(num_frames, 1)
-    return silence_ratio > 0.8
+REALTIME_CHUNK_POLICY = RealtimeChunkPolicy(
+    min_audio_seconds=1.0,
+    max_audio_seconds=30.0,
+    chunk_seconds=10.0,
+    min_speech_frames=100,
+)
 
 
 class SessionManager:
@@ -285,8 +220,15 @@ class SessionManager:
                     'processing': False,
                     'file_path': file_path,
                     'file_handle': open(file_path, "wb"),
+                    'session_tag': timestamp,
+                    'chunk_seq': 0,
+                    'result_seq': 0,
                 }
             return self._sessions[sid]
+
+    def get(self, sid):
+        with self._lock:
+            return self._sessions.get(sid)
 
     def remove(self, sid):
         with self._lock:
@@ -300,6 +242,29 @@ class SessionManager:
 
 
 session_mgr = SessionManager()
+
+
+def transcribe_realtime_chunk(audio_data: bytes) -> str:
+    wav_data = add_wav_header(audio_data)
+    return asr_adapter.transcribe_audio_bytes(wav_data, filename="audio.wav", mime_type="audio/wav")
+
+
+def build_realtime_result_payload(session, text_result: str, chunk_decision):
+    session['result_seq'] += 1
+    chunk_seq = session.get('chunk_seq', 0)
+    result_seq = session['result_seq']
+    session_tag = session.get('session_tag', 'session')
+    return {
+        "speaker_id": "Speaker_1",
+        "text": text_result,
+        "is_final": True,
+        "result_id": f"{session_tag}_result_{result_seq}",
+        "segment_id": f"{session_tag}_segment_{chunk_seq}",
+        "replace_target_id": None,
+        "result_type": "final_chunk",
+        "processing_reason": chunk_decision.reason,
+        "chunk_duration_seconds": round(chunk_decision.audio_duration_seconds, 3),
+    }
 
 
 @socketio.on("connect")
@@ -335,75 +300,37 @@ def on_audio_stream(data):
         return
 
     current_time = time.time()
-    audio_duration = len(session['buffer']) / (16000 * 2)
+    chunk_decision = decide_chunk_processing(bytes(session['buffer']), REALTIME_CHUNK_POLICY)
 
-    should_process = False
-
-    if audio_duration >= ASR_MAX_AUDIO_SECONDS:
-        logger.info(f"Audio too long ({audio_duration:.1f}s), forcing processing")
-        should_process = True
-    elif audio_duration >= ASR_CHUNK_SECONDS:
-        should_process = True
-    elif audio_duration >= ASR_MIN_AUDIO_SECONDS:
-        if len(session['buffer']) >= MIN_SPEECH_FRAMES * 4:
-            is_silent = detect_silence(bytes(session['buffer'][-4000:]))
-            if is_silent:
-                should_process = True
-
-    if not should_process:
+    if not chunk_decision.should_process:
         return
 
     audio_data = bytes(session['buffer'])
     session['buffer'].clear()
     session['last_process_time'] = current_time
     session['processing'] = True
+    session['chunk_seq'] += 1
 
-    logger.info(f"Processing audio: {len(audio_data)} bytes, duration: {len(audio_data)/(16000*2):.2f}s")
+    logger.info(
+        "Processing realtime chunk sid=%s chunk=%s reason=%s duration=%.2fs bytes=%s",
+        sid,
+        session['chunk_seq'],
+        chunk_decision.reason,
+        chunk_decision.audio_duration_seconds,
+        len(audio_data),
+    )
 
     try:
-        wav_data = add_wav_header(audio_data)
-
-        if config.ASR_MODE == 'transcriptions':
-            resp = httpx.post(
-                f"{config.ASR_BASE_URL}/audio/transcriptions",
-                files={"file": ("audio.wav", bytes(wav_data), "audio/wav")},
-                data={"model": config.ASR_MODEL, "language": "zh"},
-            )
-            text_result = resp.json().get("text", "")
-        else:
-            base64_audio = base64.b64encode(wav_data).decode('utf-8')
-
-            response = asr_client.chat.completions.create(
-                model=config.ASR_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_audio",
-                                "input_audio": {
-                                    "data": f"data:audio/wav;base64,{base64_audio}",
-                                    "format": "wav"
-                                }
-                            }
-                        ]
-                    }
-                ]
-            )
-
-            text_result = response.choices[0].message.content
+        text_result = transcribe_realtime_chunk(audio_data)
 
         if text_result and not should_filter_asr_result(text_result):
-            emit("asr_result", {
-                "speaker_id": "Speaker_1",
-                "text": text_result,
-                "is_final": True
-            })
+            emit("asr_result", build_realtime_result_payload(session, text_result, chunk_decision))
             logger.info(f"ASR 识别成功: {text_result[:50]}...")
         elif text_result:
             logger.info(f"ASR 结果被过滤: {text_result}")
     except Exception as e:
-        logger.error(f"ASR API 调用失败: {e}")
+        logger.exception(f"ASR API 调用失败: {e}")
+        emit("asr_error", {"message": "实时转写失败，请稍后重试。"})
     finally:
         session['processing'] = False
 
@@ -411,6 +338,15 @@ def on_audio_stream(data):
 @socketio.on("stop_recording")
 def on_stop_recording():
     sid = request.sid
+    session = session_mgr.get(sid)
+    if session:
+        pending_seconds = len(session['buffer']) / (16000 * 2)
+        logger.info(
+            "收到 stop_recording sid=%s pending_duration=%.2fs processing=%s",
+            sid,
+            pending_seconds,
+            session.get('processing', False),
+        )
     file_path = session_mgr.remove(sid)
     if file_path:
         logger.info(f"录音结束，音频已保存至: {file_path}")
@@ -616,36 +552,11 @@ def upload_audio():
             buffer.write(content)
 
         logger.info(f"文件上传成功: {file.filename}，开始进行 ASR 识别...")
-
-        if config.ASR_MODE == 'transcriptions':
-            resp = httpx.post(
-                f"{config.ASR_BASE_URL}/audio/transcriptions",
-                files={"file": (file.filename, content, "audio/wav")},
-                data={"model": config.ASR_MODEL, "language": "zh"},
-            )
-            text_result = resp.json().get("text", "")
-        else:
-            base64_audio = base64.b64encode(content).decode('utf-8')
-
-            response = client.chat.completions.create(
-                model=config.ASR_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_audio",
-                                "input_audio": {
-                                    "data": f"data:audio/wav;base64,{base64_audio}",
-                                    "format": "wav"
-                                }
-                            }
-                        ]
-                    }
-                ]
-            )
-
-            text_result = response.choices[0].message.content
+        text_result = asr_adapter.transcribe_audio_bytes(
+            content,
+            filename=file.filename or "upload.wav",
+            mime_type=file.mimetype or "audio/wav",
+        )
         logger.info(f"文件识别完成: {text_result[:50]}...")
 
         return jsonify({

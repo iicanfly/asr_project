@@ -273,8 +273,18 @@ let isRecording = false;
             }
         }
 
+        function emitStopRecording() {
+            if (socket && socket.connected) {
+                socket.emit('stop_recording', {
+                    reason: 'manual_stop',
+                    client_time: new Date().toISOString()
+                });
+            }
+        }
+
         function stopRecording() {
             isRecording = false;
+            emitStopRecording();
             
             if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
             if (processor) processor.disconnect();
@@ -405,6 +415,48 @@ let isRecording = false;
         let lastSpeaker = null;
         let lastMessageTime = 0;
 
+        function buildTranscriptEntry(data, messageId, text, timeStr) {
+            return {
+                id: messageId,
+                speaker: data.speaker_id,
+                content: text,
+                time: timeStr,
+                serverResultId: data.result_id || null,
+                segmentId: data.segment_id || null,
+                resultType: data.result_type || (data.is_final ? 'final' : 'partial')
+            };
+        }
+
+        function updateMessageUI(messageId, text, time) {
+            const messageDiv = document.querySelector(`div[data-message-id="${messageId}"]`);
+            if (!messageDiv) return false;
+
+            const contentDiv = messageDiv.querySelector('.message-content');
+            const timeTag = messageDiv.querySelector('.time-tag');
+
+            if (contentDiv) contentDiv.innerText = text;
+            if (timeTag) timeTag.innerText = time;
+            return true;
+        }
+
+        function replaceTranscriptEntry(data, text, timeStr) {
+            if (!data.replace_target_id) return false;
+
+            const target = transcriptData.find(item => item.serverResultId === data.replace_target_id);
+            if (!target) return false;
+
+            target.content = text;
+            target.time = timeStr;
+            target.serverResultId = data.result_id || target.serverResultId;
+            target.segmentId = data.segment_id || target.segmentId;
+            target.resultType = data.result_type || target.resultType;
+
+            updateMessageUI(target.id, text, timeStr);
+            saveCache();
+            document.getElementById('clear-btn').style.display = 'block';
+            return true;
+        }
+
         function handleASRResult(data) {
             // 实时更新转写列表
             const list = document.getElementById('transcript-list');
@@ -415,23 +467,34 @@ let isRecording = false;
             const now = Date.now();
             const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+            if (replaceTranscriptEntry(data, text, timeStr)) {
+                lastSpeaker = data.speaker_id;
+                lastMessageTime = now;
+                return;
+            }
+
             // 智能分段逻辑：
             // 1. 同一个说话人
             // 2. 时间间隔小于 10 秒
             // 满足以上条件则合并到上一个气泡，否则新建气泡
             const shouldMerge = lastSpeaker === data.speaker_id && (now - lastMessageTime < 10000);
 
-            // 生成唯一消息 ID
-            const messageId = ++messageIdCounter;
+            if (shouldMerge && transcriptData.length > 0) {
+                const lastEntry = transcriptData[transcriptData.length - 1];
+                const mergedText = `${lastEntry.content} ${text}`.trim();
+                addMessageUI(data.speaker_id, text, timeStr, true, lastEntry.id);
+                lastEntry.content = mergedText;
+                lastEntry.time = timeStr;
+                lastEntry.serverResultId = data.result_id || lastEntry.serverResultId;
+                lastEntry.segmentId = data.segment_id || lastEntry.segmentId;
+                lastEntry.resultType = data.result_type || lastEntry.resultType;
+            } else {
+                // 生成唯一消息 ID
+                const messageId = ++messageIdCounter;
 
-            addMessageUI(data.speaker_id, text, timeStr, shouldMerge, messageId);
-
-            transcriptData.push({
-                id: messageId,
-                speaker: data.speaker_id,
-                content: text,
-                time: timeStr
-            });
+                addMessageUI(data.speaker_id, text, timeStr, false, messageId);
+                transcriptData.push(buildTranscriptEntry(data, messageId, text, timeStr));
+            }
 
             lastSpeaker = data.speaker_id;
             lastMessageTime = now;
@@ -452,10 +515,6 @@ let isRecording = false;
                 contentDiv.innerHTML += ' ' + text;
                 const timeTag = lastMsg.querySelector('.time-tag');
                 if (timeTag) timeTag.innerText = time;
-                // 更新 transcriptData 中最后一条的内容
-                if (transcriptData.length > 0) {
-                    transcriptData[transcriptData.length - 1].content += ' ' + text;
-                }
             } else {
                 // 新建消息气泡
                 const div = document.createElement('div');
@@ -1452,15 +1511,11 @@ let isRecording = false;
                     
                     data.forEach(d => {
                         const timeStr = d.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                        // 简化合并逻辑：如果是同一个说话人，就尝试合并
-                        // 注意：从缓存加载时，我们无法准确知道当时的时间间隔，所以主要靠说话人判断
-                        const shouldMerge = lastSpeaker === d.speaker;
-
                         // 如果缓存的数据有 ID，使用它；否则生成新的
                         const msgId = d.id || ++messageIdCounter;
                         d.id = msgId; // 确保数据有 ID
 
-                        addMessageUI(d.speaker, d.content, timeStr, shouldMerge, msgId);
+                        addMessageUI(d.speaker, d.content, timeStr, false, msgId);
 
                         transcriptData.push(d);
                         lastSpeaker = d.speaker;
