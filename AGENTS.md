@@ -31,3 +31,19 @@
 - 涉及运行行为的改动，必须先判断影响范围属于 `外网专属`、`内网专属` 还是 `双环境共享`。
 - 长期协作上下文应沉淀到 `docs/PM/` 目录下的项目管理文件中，避免后续会话因上下文过长而失效。
 - 默认把 `docs/PM/CODEX_PLAYBOOK.md` 视为本仓库的协作说明主文件。
+
+## 文档维护默认规则
+- 只要某一轮工作改变了项目认知、任务优先级、环境差异、测试重点、已知问题或关键链路，就应同步更新 `docs/PM/` 下对应文档，而不是只修改代码。
+- 默认优先维护以下文件：
+  - `BACKLOG.md`
+  - `ENV_MATRIX.md`
+  - `TEST_MATRIX.md`
+  - `SESSION_SUMMARY.md`
+  - `SYSTEM_OVERVIEW.md`
+  - `MODULE_INDEX.md`
+  - `FUNCTION_CONTRACTS.md`
+  - `CONFIG_MAP.md`
+  - `API_FLOW.md`
+  - `KNOWN_ISSUES.md`
+- 如果某一轮改动不影响这些文档，可以不更新；但如果影响到了项目真实状态，必须把文档更新纳入同一轮本地提交。
+- 默认把 `docs/PM/DOC_MAINTENANCE.md` 视为项目管理文档的维护准则。
