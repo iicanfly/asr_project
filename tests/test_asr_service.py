@@ -7,6 +7,7 @@ from services.asr_service import (
     detect_silence,
     has_usable_speech,
     is_weak_background_audio,
+    refine_asr_result_text,
     should_filter_asr_result,
 )
 
@@ -73,11 +74,24 @@ class AudioFeatureTests(unittest.TestCase):
 
 class FilterResultTests(unittest.TestCase):
     def test_filters_short_or_filler_only_text(self):
+        self.assertTrue(should_filter_asr_result("嗯"))
         self.assertTrue(should_filter_asr_result("嗯啊"))
         self.assertTrue(should_filter_asr_result("哈"))
 
     def test_keeps_normal_sentence(self):
         self.assertFalse(should_filter_asr_result("今天下午两点开会"))
+
+    def test_trims_boundary_fillers_but_keeps_meaningful_content(self):
+        self.assertEqual(refine_asr_result_text("嗯 今天开始"), "今天开始")
+        self.assertEqual(refine_asr_result_text("啊好的"), "好的")
+        self.assertEqual(refine_asr_result_text("你好啊"), "你好")
+        self.assertFalse(should_filter_asr_result("嗯 今天开始"))
+        self.assertFalse(should_filter_asr_result("啊好的"))
+
+    def test_keeps_short_valid_phrases(self):
+        self.assertFalse(should_filter_asr_result("好的"))
+        self.assertFalse(should_filter_asr_result("可以"))
+        self.assertFalse(should_filter_asr_result("那个我们开始吧"))
 
 
 if __name__ == "__main__":

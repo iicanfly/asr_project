@@ -16,6 +16,7 @@ from services.asr_service import (
     RealtimeChunkPolicy,
     add_wav_header,
     decide_chunk_processing,
+    refine_asr_result_text,
     should_filter_asr_result,
 )
 
@@ -339,12 +340,21 @@ def on_audio_stream(data):
 
     try:
         text_result = transcribe_realtime_chunk(audio_data)
+        refined_text_result = refine_asr_result_text(text_result)
 
-        if text_result and not should_filter_asr_result(text_result):
-            emit("asr_result", build_realtime_result_payload(session, text_result, chunk_decision))
-            logger.info(f"ASR 识别成功: {text_result[:50]}...")
+        if refined_text_result and not should_filter_asr_result(refined_text_result):
+            emit("asr_result", build_realtime_result_payload(session, refined_text_result, chunk_decision))
+            logger.info(
+                "ASR 识别成功(原始=%s, 输出=%s)",
+                text_result[:50] if text_result else "",
+                refined_text_result[:50],
+            )
         elif text_result:
-            logger.info(f"ASR 结果被过滤: {text_result}")
+            logger.info(
+                "ASR 结果被过滤(原始=%s, 清洗后=%s)",
+                text_result[:50],
+                refined_text_result[:50] if refined_text_result else "",
+            )
     except Exception as e:
         logger.exception(f"ASR API 调用失败: {e}")
         emit("asr_error", {"message": "实时转写失败，请稍后重试。"})

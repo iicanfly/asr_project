@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import re
 from dataclasses import dataclass
 from typing import Sequence
 
 
-DEFAULT_FILLER_WORDS = ("嗯", "啊", "呃", "那", "哦", "唔", "嘿", "咳")
+DEFAULT_FILLER_WORDS = ("嗯", "啊", "呃", "额", "哦", "唔", "嘿", "咳", "呀", "哎", "诶", "欸", "哈")
+DEFAULT_ALLOWED_SHORT_PHRASES = ("好的", "可以", "收到", "是的", "谢谢", "你好", "行的", "没事", "对的")
+BOUNDARY_PUNCTUATION = "，。！？、；：,.!?;:~… "
 
 
 @dataclass(frozen=True)
@@ -316,18 +319,69 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
     )
 
 
+def _build_filler_pattern(filler_words: Sequence[str]) -> str:
+    ordered = sorted({word.strip() for word in filler_words if word and word.strip()}, key=len, reverse=True)
+    if not ordered:
+        return ""
+    return "|".join(re.escape(word) for word in ordered)
+
+
+def _normalize_asr_text(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text or "").strip()
+    normalized = normalized.replace("。 。", "。").replace("， ，", "，")
+    return normalized
+
+
+def refine_asr_result_text(
+    text: str,
+    filler_words: Sequence[str] = DEFAULT_FILLER_WORDS,
+) -> str:
+    normalized_text = _normalize_asr_text(text)
+    if not normalized_text:
+        return ""
+
+    filler_pattern = _build_filler_pattern(filler_words)
+    if not filler_pattern:
+        return normalized_text
+
+    boundary_chars = re.escape(BOUNDARY_PUNCTUATION)
+    leading_pattern = re.compile(rf"^(?:(?:{filler_pattern})(?:[{boundary_chars}]*)+)+")
+    trailing_pattern = re.compile(rf"(?:(?:[{boundary_chars}]*)+(?:{filler_pattern}))+[{boundary_chars}]*$")
+
+    refined = normalized_text
+    previous = None
+    while refined and refined != previous:
+        previous = refined
+        refined = leading_pattern.sub("", refined).strip()
+        refined = trailing_pattern.sub("", refined).strip()
+        refined = refined.strip(BOUNDARY_PUNCTUATION).strip()
+    return refined
+
+
 def should_filter_asr_result(text: str, filler_words: Sequence[str] = DEFAULT_FILLER_WORDS) -> bool:
-    if not text or not text.strip():
+    normalized_text = _normalize_asr_text(text)
+    if not normalized_text:
         return True
 
-    normalized_text = text.strip()
-    filler_count = sum(normalized_text.count(word) for word in filler_words)
+    refined_text = refine_asr_result_text(normalized_text, filler_words=filler_words)
+    if not refined_text:
+        return True
+    if refined_text in DEFAULT_ALLOWED_SHORT_PHRASES:
+        return False
 
-    if len(normalized_text) > 0 and filler_count / len(normalized_text) > 0.5:
+    dense_text = re.sub(rf"[{re.escape(BOUNDARY_PUNCTUATION)}\s]", "", refined_text)
+    if not dense_text:
         return True
-    if len(normalized_text) >= 3 and len(set(normalized_text)) <= 2:
+
+    filler_count = sum(dense_text.count(word) for word in filler_words)
+    if len(dense_text) > 0 and filler_count / len(dense_text) >= 0.6:
         return True
-    if len(normalized_text) < 2:
+    if len(dense_text) <= 4 and filler_count >= max(1, len(dense_text) - 1):
+        return True
+
+    if len(dense_text) >= 3 and len(set(dense_text)) <= 2:
+        return True
+    if len(dense_text) < 2:
         return True
     return False
 
