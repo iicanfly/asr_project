@@ -123,6 +123,15 @@
   - 噪声样本应稳定输出 `no_usable_speech`。
   - 柔和但持续的人声样本应稳定输出 `sustained_soft_speech` 与 `tail_sustained_presence`。
 
+### 2026-05-10 / simplified pipeline 重构补充
+- 自动化补充检查：
+  - `decide_chunk_processing_simple()` 在 `2.5s` 左右的正常语音样本上，应能触发 `chunk_duration_reached`。
+  - `decide_chunk_processing_simple()` 在明显弱噪声样本上，应直接走 `simplified_drop_weak_audio_after_*`。
+  - `decide_stop_flush_simple()` 对短促但连续的尾音，应允许 `stop_flush_short_voiced_tail`。
+- 手工补充检查：
+  - 外网开发模式下，正常说一句话后，前端应更快出现 partial，不应普遍等到 10 秒。
+  - 如果仍经常要点“停止录音”才出字，说明 simplified 路径虽然接上了，但触发或上传门控仍偏紧。
+
 ### 2026-05-10 / voiced density 补充
 - 自动化补充检查：
   - 如果活跃帧不少，但有声帧只占活跃帧中的很小一部分，则不应再走 `sustained_soft_speech` 兜底。

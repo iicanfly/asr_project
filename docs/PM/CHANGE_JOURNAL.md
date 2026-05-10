@@ -264,6 +264,38 @@
 
 ### 2026-05-10 / Commit 待填写
 - 主题：
+  - 启动 simplified realtime pipeline，进入简化重构 Phase 0 / Phase 1。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增：
+    - `decide_chunk_processing_simple()`
+    - `decide_stop_flush_simple()`
+    - 简化版 trigger / upload gate 辅助逻辑
+  - 在 `main.py` 中接入 `ENABLE_SIMPLIFIED_REALTIME_PIPELINE` 开关，并根据该开关选择 simplified 或 legacy 路径。
+  - 外网开发模式下，simplified 路径默认使用更快的 partial 基线参数：
+    - `min_audio_seconds=0.6`
+    - `chunk_seconds=2.5`
+    - `max_audio_seconds=12.0`
+    - `stop_flush_min_seconds=0.25`
+    - `min_speech_frames=60`
+  - 在 `tests/test_asr_service.py` 中新增 simplified 路径测试。
+- 目的：
+  - 先恢复实时 partial 的及时性与可预测性，不再默认等到 10 秒才出字。
+  - 保留 legacy 路径作为回滚基线，避免继续在原逻辑上补丁式叠加。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py`
+  - `python tools/check_doc_corruption.py`
+- 当前结果：
+  - simplified 路径已接入主链路；
+  - 自动化 53 项通过；
+  - 当前已具备继续做下一轮 Phase 1/2 手工回归与调参的基础。
+- 用户反馈：
+  - 用户已明确同意开始实施简化重构。
+- 后续动作：
+  - 先用真实录音验证 simplified 路径的 partial 延迟是否明显下降，再决定是否继续收缩上传门控与文本层复杂 patch。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
   - 实时转写第三轮：小段结果到大段结果的替换回写最小闭环。
 - 修改内容：
   - 在 `services/asr_service.py` 中新增 `SegmentRewritePolicy`、`SegmentRewriteDecision` 与 `decide_segment_rewrite()`，把段级回写触发条件抽成可测试规则。

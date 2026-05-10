@@ -14,7 +14,9 @@ from services.asr_service import (
     SegmentRewritePolicy,
     decide_segment_rewrite,
     decide_chunk_processing,
+    decide_chunk_processing_simple,
     decide_stop_flush,
+    decide_stop_flush_simple,
     detect_silence,
     has_usable_speech,
     is_weak_background_audio,
@@ -115,6 +117,13 @@ class ChunkDecisionTests(unittest.TestCase):
         self.assertTrue(decision.should_process)
         self.assertEqual(decision.reason, "stop_flush_short_voiced_tail")
 
+    def test_simplified_stop_flush_keeps_short_voiced_tail(self):
+        policy = RealtimeChunkPolicy(stop_flush_min_seconds=0.25)
+        short_tail_audio = pcm_frames(([320] * 4) + ([0] * 24), frame_size=256)
+        decision = decide_stop_flush_simple(short_tail_audio, policy)
+        self.assertTrue(decision.should_process)
+        self.assertEqual(decision.reason, "stop_flush_short_voiced_tail")
+
 
 class RealtimePolicyOverrideTests(unittest.TestCase):
     def test_loads_global_realtime_policy_overrides(self):
@@ -180,6 +189,31 @@ class AudioFeatureTests(unittest.TestCase):
         retained = retain_realtime_buffer(uncertain_audio, decision, policy)
         self.assertLess(len(retained), len(uncertain_audio))
         self.assertGreater(len(retained), 0)
+
+    def test_simplified_chunk_processing_triggers_faster_partial(self):
+        policy = RealtimeChunkPolicy(
+            min_audio_seconds=0.6,
+            chunk_seconds=2.5,
+            max_audio_seconds=12.0,
+            min_speech_frames=60,
+        )
+        speech_audio = pcm_window(900, int(16000 * 2.6))
+        decision = decide_chunk_processing_simple(speech_audio, policy)
+        self.assertTrue(decision.should_process)
+        self.assertEqual(decision.reason, "chunk_duration_reached")
+
+    def test_simplified_chunk_processing_drops_weak_noise(self):
+        policy = RealtimeChunkPolicy(
+            min_audio_seconds=0.6,
+            chunk_seconds=2.5,
+            max_audio_seconds=12.0,
+            min_speech_frames=60,
+        )
+        noise_audio = pcm_window(80, int(16000 * 2.6))
+        decision = decide_chunk_processing_simple(noise_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertIn("simplified_drop_weak_audio_after_", decision.reason)
 
     def test_sustained_soft_speech_still_counts_as_usable(self):
         policy = RealtimeChunkPolicy()

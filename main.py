@@ -22,8 +22,10 @@ from services.asr_service import (
     is_effective_text_update,
     load_realtime_chunk_policy_overrides,
     decide_chunk_processing,
+    decide_chunk_processing_simple,
     decide_segment_rewrite,
     decide_stop_flush,
+    decide_stop_flush_simple,
     refine_asr_result_text,
     retain_realtime_buffer,
     should_filter_asr_result,
@@ -50,6 +52,13 @@ TEMP_DIR = config.TEMP_DIR
 EXPORT_DIR = config.EXPORT_DIR
 for d in [TEMP_DIR, EXPORT_DIR]:
     os.makedirs(d, exist_ok=True)
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return str(raw_value).strip().lower() in {"1", "true", "yes", "on"}
 
 def remove_markdown_formatting(text: str) -> str:
     if not text:
@@ -200,11 +209,28 @@ def get_status():
     })
 
 
-DEFAULT_REALTIME_CHUNK_POLICY = RealtimeChunkPolicy(
-    min_audio_seconds=1.0,
-    max_audio_seconds=30.0,
-    chunk_seconds=10.0,
-    min_speech_frames=100,
+DEFAULT_ENABLE_SIMPLIFIED_REALTIME_PIPELINE = not config.USE_INTRANET
+ENABLE_SIMPLIFIED_REALTIME_PIPELINE = env_flag(
+    "ENABLE_SIMPLIFIED_REALTIME_PIPELINE",
+    DEFAULT_ENABLE_SIMPLIFIED_REALTIME_PIPELINE,
+)
+
+DEFAULT_REALTIME_CHUNK_POLICY = (
+    RealtimeChunkPolicy(
+        min_audio_seconds=0.6,
+        max_audio_seconds=12.0,
+        chunk_seconds=2.5,
+        stop_flush_min_seconds=0.25,
+        min_speech_frames=60,
+        uncertain_retain_seconds=0.6,
+    )
+    if ENABLE_SIMPLIFIED_REALTIME_PIPELINE
+    else RealtimeChunkPolicy(
+        min_audio_seconds=1.0,
+        max_audio_seconds=30.0,
+        chunk_seconds=10.0,
+        min_speech_frames=100,
+    )
 )
 REALTIME_CHUNK_POLICY, REALTIME_CHUNK_POLICY_OVERRIDES = load_realtime_chunk_policy_overrides(
     DEFAULT_REALTIME_CHUNK_POLICY,
@@ -212,6 +238,8 @@ REALTIME_CHUNK_POLICY, REALTIME_CHUNK_POLICY_OVERRIDES = load_realtime_chunk_pol
     mode_prefix="INTRANET" if config.USE_INTRANET else "ONLINE",
 )
 SEGMENT_REWRITE_POLICY = SegmentRewritePolicy()
+DECIDE_REALTIME_CHUNK = decide_chunk_processing_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_chunk_processing
+DECIDE_STOP_FLUSH = decide_stop_flush_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_stop_flush
 
 
 class SessionManager:
@@ -481,7 +509,7 @@ def flush_pending_realtime_buffer(session, sid, *, force_finalize_segment=False)
     if not pending_audio:
         return False
 
-    chunk_decision = decide_stop_flush(pending_audio, REALTIME_CHUNK_POLICY)
+    chunk_decision = DECIDE_STOP_FLUSH(pending_audio, REALTIME_CHUNK_POLICY)
     session['buffer'].clear()
 
     if not chunk_decision.should_process:
@@ -589,7 +617,7 @@ def on_audio_stream(data):
         return
 
     current_time = time.time()
-    chunk_decision = decide_chunk_processing(bytes(session['buffer']), REALTIME_CHUNK_POLICY)
+    chunk_decision = DECIDE_REALTIME_CHUNK(bytes(session['buffer']), REALTIME_CHUNK_POLICY)
 
     if not chunk_decision.should_process:
         if chunk_decision.drop_buffer:
@@ -883,6 +911,10 @@ if __name__ == "__main__":
     logger.info(f"启动服务器: {config.HOST}:{config.PORT}")
     logger.info(f"运行模式: {'内网' if config.USE_INTRANET else '外网开发'}")
     logger.info(f"ASR 模型: {config.ASR_MODEL}, LLM 模型: {config.LLM_MODEL}")
+    logger.info(
+        "实时转写管线: %s",
+        "simplified" if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else "legacy",
+    )
     if REALTIME_CHUNK_POLICY_OVERRIDES:
         logger.info("实时转写门槛环境覆盖: %s", REALTIME_CHUNK_POLICY_OVERRIDES)
 

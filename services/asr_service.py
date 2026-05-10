@@ -528,6 +528,214 @@ def retain_realtime_buffer(audio_data: bytes, decision: ChunkDecision, policy: R
     return retained_audio[-retain_bytes:]
 
 
+def _build_trigger_wait_decision(
+    *,
+    reason: str,
+    duration_seconds: float,
+    features: AudioFeatures,
+    speech_gate_reason: str,
+    tail_gate_reason: str = "",
+) -> ChunkDecision:
+    return ChunkDecision(
+        should_process=False,
+        reason=reason,
+        audio_duration_seconds=duration_seconds,
+        trailing_silence_detected=False,
+        audio_features=features,
+        speech_gate_reason=speech_gate_reason,
+        tail_gate_reason=tail_gate_reason,
+    )
+
+
+def _decide_simplified_upload_gate(
+    *,
+    trigger_reason: str,
+    duration_seconds: float,
+    trailing_silence_detected: bool,
+    features: AudioFeatures,
+    speech_gate_reason: str,
+    tail_gate_reason: str,
+    policy: RealtimeChunkPolicy,
+) -> ChunkDecision:
+    if has_usable_speech(features, policy):
+        return ChunkDecision(
+            should_process=True,
+            reason=trigger_reason,
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=trailing_silence_detected,
+            audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+            tail_gate_reason=tail_gate_reason,
+        )
+
+    if trailing_silence_detected and has_potential_short_speech(features, policy):
+        return ChunkDecision(
+            should_process=True,
+            reason="tail_short_speech_detected",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=True,
+            audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+            tail_gate_reason=tail_gate_reason,
+        )
+
+    if is_weak_background_audio(features, policy):
+        return ChunkDecision(
+            should_process=False,
+            reason=f"simplified_drop_weak_audio_after_{trigger_reason}",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=trailing_silence_detected,
+            drop_buffer=True,
+            audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+            tail_gate_reason=tail_gate_reason,
+        )
+
+    return ChunkDecision(
+        should_process=True,
+        reason=f"simplified_fallback_{trigger_reason}",
+        audio_duration_seconds=duration_seconds,
+        trailing_silence_detected=trailing_silence_detected,
+        audio_features=features,
+        speech_gate_reason=speech_gate_reason,
+        tail_gate_reason=tail_gate_reason,
+    )
+
+
+def decide_chunk_processing_simple(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDecision:
+    features = extract_audio_features(
+        audio_data,
+        sample_rate=policy.sample_rate,
+        bytes_per_sample=policy.bytes_per_sample,
+        frame_size=policy.frame_size,
+        silence_threshold=policy.silence_threshold,
+        peak_threshold=policy.peak_threshold,
+        speech_rms_threshold=policy.speech_rms_threshold,
+        speech_peak_threshold=policy.speech_peak_threshold,
+    )
+    duration_seconds = features.duration_seconds
+    speech_gate_reason = describe_usable_speech(features, policy)
+
+    if duration_seconds < policy.min_audio_seconds:
+        return _build_trigger_wait_decision(
+            reason="below_min_duration",
+            duration_seconds=duration_seconds,
+            features=features,
+            speech_gate_reason=speech_gate_reason,
+        )
+
+    min_required_bytes = policy.min_speech_frames * 4
+    if len(audio_data) < min_required_bytes:
+        return _build_trigger_wait_decision(
+            reason="insufficient_frames",
+            duration_seconds=duration_seconds,
+            features=features,
+            speech_gate_reason=speech_gate_reason,
+        )
+
+    trigger_reason = ""
+    trailing_silence_detected = False
+    tail_gate_reason = ""
+
+    if duration_seconds >= policy.max_audio_seconds:
+        trigger_reason = "max_duration_reached"
+    elif duration_seconds >= policy.chunk_seconds:
+        trigger_reason = "chunk_duration_reached"
+    else:
+        tail_audio = audio_data[-policy.tail_silence_bytes :]
+        trailing_silence_detected = detect_silence(
+            tail_audio,
+            frame_size=policy.frame_size,
+            silence_threshold=policy.silence_threshold,
+            peak_threshold=policy.peak_threshold,
+            silence_ratio_threshold=policy.silence_ratio_threshold,
+        )
+        if not trailing_silence_detected:
+            return _build_trigger_wait_decision(
+                reason="waiting_for_more_audio",
+                duration_seconds=duration_seconds,
+                features=features,
+                speech_gate_reason=speech_gate_reason,
+            )
+        trigger_reason = "tail_silence_detected"
+        tail_gate_reason = describe_tail_triggerable_speech(features, policy)
+
+    return _decide_simplified_upload_gate(
+        trigger_reason=trigger_reason,
+        duration_seconds=duration_seconds,
+        trailing_silence_detected=trailing_silence_detected,
+        features=features,
+        speech_gate_reason=speech_gate_reason,
+        tail_gate_reason=tail_gate_reason,
+        policy=policy,
+    )
+
+
+def decide_stop_flush_simple(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDecision:
+    features = extract_audio_features(
+        audio_data,
+        sample_rate=policy.sample_rate,
+        bytes_per_sample=policy.bytes_per_sample,
+        frame_size=policy.frame_size,
+        silence_threshold=policy.silence_threshold,
+        peak_threshold=policy.peak_threshold,
+        speech_rms_threshold=policy.speech_rms_threshold,
+        speech_peak_threshold=policy.speech_peak_threshold,
+    )
+    duration_seconds = features.duration_seconds
+    speech_gate_reason = describe_usable_speech(features, policy)
+
+    if duration_seconds <= 0:
+        return ChunkDecision(
+            should_process=False,
+            reason="stop_flush_empty_buffer",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=False,
+            audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+        )
+
+    if duration_seconds < policy.stop_flush_min_seconds:
+        return ChunkDecision(
+            should_process=False,
+            reason="stop_flush_below_min_duration",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=False,
+            audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+        )
+
+    if has_usable_speech(features, policy):
+        return ChunkDecision(
+            should_process=True,
+            reason="stop_flush_pending_audio",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=False,
+            audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+        )
+
+    if has_potential_short_speech(features, policy):
+        return ChunkDecision(
+            should_process=True,
+            reason="stop_flush_short_voiced_tail",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=False,
+            audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+        )
+
+    return ChunkDecision(
+        should_process=False,
+        reason="stop_flush_drop_weak_audio",
+        audio_duration_seconds=duration_seconds,
+        trailing_silence_detected=False,
+        drop_buffer=True,
+        audio_features=features,
+        speech_gate_reason=speech_gate_reason,
+    )
+
+
 def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDecision:
     features = extract_audio_features(
         audio_data,

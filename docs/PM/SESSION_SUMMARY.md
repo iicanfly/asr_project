@@ -149,6 +149,27 @@
 - 这意味着后续不仅要维护已有 PM 文档，还要主动判断：
   - 本轮的方案、阈值、流程、回滚点、测试策略，是否已经值得升格为长期记忆文件。
 
+## 2026-05-10 / 简化重构实施进展（Phase 0 + Phase 1 起步）
+- 当前已开始按《实时语音转写简化重构实施清单》正式施工。
+- 本轮已完成：
+  - 在 `main.py` 中接入 `ENABLE_SIMPLIFIED_REALTIME_PIPELINE` 开关。
+  - 保留 legacy 路径不删，同时新增 simplified realtime pipeline 路径。
+  - 外网开发模式默认启用 simplified 路径；内网默认仍保守保持 legacy，降低双环境风险。
+  - simplified 路径下的默认实时参数已切到更快 partial 基线：
+    - `min_audio_seconds=0.6`
+    - `chunk_seconds=2.5`
+    - `max_audio_seconds=12.0`
+    - `stop_flush_min_seconds=0.25`
+    - `min_speech_frames=60`
+  - 在 `services/asr_service.py` 中新增：
+    - `decide_chunk_processing_simple()`
+    - `decide_stop_flush_simple()`
+  - 在 `tests/test_asr_service.py` 中补了 simplified 路径的自动化回归测试。
+- 当前意图：
+  - 先恢复“正常说话能更快出 partial”；
+  - 再继续收敛上传门控；
+  - 最后验证 rewrite 兼容性。
+
 ## 2026-05-10 / 实时转写第三轮进展
 - 已开始处理第三优先级事项：小段结果到大段结果的替换回写。
 - 当前实现状态：
