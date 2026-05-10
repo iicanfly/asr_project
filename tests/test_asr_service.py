@@ -1,6 +1,7 @@
 import unittest
 
 from services.asr_service import (
+    build_realtime_chunk_policy,
     collapse_transcript_text,
     describe_tail_triggerable_speech,
     describe_usable_speech,
@@ -213,7 +214,53 @@ class AudioFeatureTests(unittest.TestCase):
         decision = decide_chunk_processing_simple(noise_audio, policy)
         self.assertFalse(decision.should_process)
         self.assertTrue(decision.drop_buffer)
-        self.assertIn("simplified_drop_weak_audio_after_", decision.reason)
+        self.assertEqual(
+            decision.reason,
+            "simplified_drop_non_speech_after_chunk_duration_reached",
+        )
+
+    def test_simplified_chunk_processing_drops_non_speech_at_chunk_boundary(self):
+        policy = RealtimeChunkPolicy(
+            min_audio_seconds=0.6,
+            chunk_seconds=2.5,
+            max_audio_seconds=12.0,
+            min_speech_frames=60,
+        )
+        non_speech_audio = pcm_window(180, int(16000 * 2.6))
+        decision = decide_chunk_processing_simple(non_speech_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertEqual(
+            decision.reason,
+            "simplified_drop_non_speech_after_chunk_duration_reached",
+        )
+
+    def test_simplified_chunk_processing_drops_non_speech_after_tail_silence(self):
+        policy = RealtimeChunkPolicy(
+            min_audio_seconds=0.6,
+            chunk_seconds=2.5,
+            max_audio_seconds=12.0,
+            min_speech_frames=60,
+            tail_silence_bytes=4096,
+        )
+        non_speech_tail_audio = pcm_frames(([180] * 20) + ([0] * 64))
+        decision = decide_chunk_processing_simple(non_speech_tail_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertEqual(
+            decision.reason,
+            "simplified_drop_non_speech_after_tail_silence_detected",
+        )
+
+    def test_build_realtime_chunk_policy_keeps_main_defaults_in_one_place(self):
+        simplified_policy = build_realtime_chunk_policy(simplified=True)
+        legacy_policy = build_realtime_chunk_policy(simplified=False)
+        self.assertEqual(simplified_policy.chunk_seconds, 2.5)
+        self.assertEqual(simplified_policy.min_audio_seconds, 0.6)
+        self.assertEqual(simplified_policy.max_audio_seconds, 12.0)
+        self.assertEqual(legacy_policy.chunk_seconds, 10.0)
+        self.assertEqual(legacy_policy.min_audio_seconds, 1.0)
+        self.assertEqual(legacy_policy.max_audio_seconds, 30.0)
 
     def test_sustained_soft_speech_still_counts_as_usable(self):
         policy = RealtimeChunkPolicy()

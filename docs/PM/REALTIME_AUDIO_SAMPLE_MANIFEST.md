@@ -31,25 +31,25 @@
 ### 4.1 单条 PCM 录音快速分析
 
 ```powershell
-python tools\analyze_realtime_audio.py --input-format pcm temp_audio\stream_recording_20260510_183243.pcm
+python tools\analyze_realtime_audio.py --input-format pcm --pipeline simplified temp_audio\stream_recording_20260510_183243.pcm
 ```
 
 ### 4.2 查看关键时间线
 
 ```powershell
-python tools\analyze_realtime_audio.py --input-format pcm --timeline --timeline-limit 20 temp_audio\stream_recording_20260510_183243.pcm
+python tools\analyze_realtime_audio.py --input-format pcm --pipeline simplified --timeline --timeline-limit 20 temp_audio\stream_recording_20260510_183243.pcm
 ```
 
 ### 4.3 导出结构化 JSON 结果
 
 ```powershell
-python tools\analyze_realtime_audio.py --input-format pcm --json-output temp_audio\analysis_from_pcm.json temp_audio\stream_recording_20260510_183243.pcm
+python tools\analyze_realtime_audio.py --input-format pcm --pipeline simplified --json-output temp_audio\analysis_from_pcm.json temp_audio\stream_recording_20260510_183243.pcm
 ```
 
 ### 4.4 批量分析多条 PCM 录音
 
 ```powershell
-python tools\analyze_realtime_audio.py --input-format pcm temp_audio\stream_recording_20260510_050655.pcm temp_audio\stream_recording_20260510_175722.pcm temp_audio\stream_recording_20260510_183243.pcm
+python tools\analyze_realtime_audio.py --input-format pcm --pipeline simplified temp_audio\stream_recording_20260510_050655.pcm temp_audio\stream_recording_20260510_175722.pcm temp_audio\stream_recording_20260510_183243.pcm
 ```
 
 ## 5. 当前默认观察口径
@@ -66,4 +66,5 @@ python tools\analyze_realtime_audio.py --input-format pcm temp_audio\stream_reco
 ## 6. 当前结论
 
 - 现在仓库里的离线分析工具已经可以**直接读取前端自动落盘的 PCM 真实录音**，不需要先转成 WAV
+- 这些 PCM 录音可以按前端实时包粒度回放：当前离线工具默认沿用 `packet_samples=512`，等价于按约 32ms 一包重放实时录音流
 - 后续静音过滤、弱语音、尾静音补刷、rewrite 时机等调参，应优先基于这批真实录音样本验证，而不是只靠合成或口头描述

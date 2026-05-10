@@ -19,6 +19,7 @@ from services.asr_service import (
     RealtimeChunkPolicy,
     SegmentRewritePolicy,
     add_wav_header,
+    build_realtime_chunk_policy,
     is_effective_text_update,
     load_realtime_chunk_policy_overrides,
     decide_chunk_processing,
@@ -215,22 +216,8 @@ ENABLE_SIMPLIFIED_REALTIME_PIPELINE = env_flag(
     DEFAULT_ENABLE_SIMPLIFIED_REALTIME_PIPELINE,
 )
 
-DEFAULT_REALTIME_CHUNK_POLICY = (
-    RealtimeChunkPolicy(
-        min_audio_seconds=0.6,
-        max_audio_seconds=12.0,
-        chunk_seconds=2.5,
-        stop_flush_min_seconds=0.25,
-        min_speech_frames=60,
-        uncertain_retain_seconds=0.6,
-    )
-    if ENABLE_SIMPLIFIED_REALTIME_PIPELINE
-    else RealtimeChunkPolicy(
-        min_audio_seconds=1.0,
-        max_audio_seconds=30.0,
-        chunk_seconds=10.0,
-        min_speech_frames=100,
-    )
+DEFAULT_REALTIME_CHUNK_POLICY = build_realtime_chunk_policy(
+    simplified=ENABLE_SIMPLIFIED_REALTIME_PIPELINE,
 )
 REALTIME_CHUNK_POLICY, REALTIME_CHUNK_POLICY_OVERRIDES = load_realtime_chunk_policy_overrides(
     DEFAULT_REALTIME_CHUNK_POLICY,

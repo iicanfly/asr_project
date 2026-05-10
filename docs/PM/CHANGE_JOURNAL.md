@@ -858,3 +858,16 @@
   - `docs/PM/CODEX_PLAYBOOK.md`
 - 新默认规则：后续修改中文文档时，优先使用 `apply_patch`，避免再走 PowerShell 直接写中文的高风险路径。
 - 验证：`python tools/check_doc_corruption.py` 通过。
+
+## 2026-05-10 / 本轮：启动真实 PCM 的静音过滤 / 弱语音门控校准
+- 已确认 `temp_audio/` 下的真实 PCM 录音可按前端实时流粒度回放，当前离线工具按 `packet_samples=512` 重放，适合做实时门控复盘。
+- 改动：`tools/analyze_realtime_audio.py` 新增 `--pipeline simplified|legacy`，并默认按 `simplified` 分析，和当前外网开发链路对齐。
+- 改动：`services/asr_service.py` 新增 `build_realtime_chunk_policy()`，把 main 与离线分析工具的默认门控参数收敛到同一处维护。
+- 改动：收紧 simplified 上传门控：
+  - `speech_gate_reason=no_usable_speech`
+  - `speech_gate_reason=fragmented_voiced_presence`
+  - 上述两类片段不再通过 `simplified_fallback_*` 放行，而是直接走 `simplified_drop_non_speech_after_*`
+- 保留：`tail_short_speech_detected` 的极短短语音兜底，不直接一刀切删除。
+- 验证：
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tools\analyze_realtime_audio.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py`

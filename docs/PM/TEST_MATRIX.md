@@ -226,3 +226,11 @@
 - 回归目标：直接复盘 `temp_audio/` 下的真实录音，不再要求先手工转 WAV
 - 关注指标：`process_count`、`drop_count`、`speech_gate_reasons`、`tail_gate_reasons`、`stop_flush_event`、`timeline_events`
 - 使用场景：静音过滤、弱语音、尾静音补刷、长录音稳定性调参
+
+## 2026-05-10 / simplified 门控专项校准
+- 离线分析默认应使用：`--pipeline simplified`
+- 原因：当前外网开发模式的实时转写主链路默认就是 simplified pipeline
+- 本轮重点验证项：
+  - `no_usable_speech` 是否还会被 simplified fallback 错误放行
+  - 尾静音后的非语音短尾巴是否被直接丢弃
+  - `tail_short_speech_detected` 是否仍保留对极短真实语音的兜底

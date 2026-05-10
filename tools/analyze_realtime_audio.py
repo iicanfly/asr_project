@@ -15,7 +15,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.asr_service import ChunkDecision, RealtimeChunkPolicy, decide_chunk_processing, decide_stop_flush
+from services.asr_service import (
+    ChunkDecision,
+    RealtimeChunkPolicy,
+    build_realtime_chunk_policy,
+    decide_chunk_processing,
+    decide_chunk_processing_simple,
+    decide_stop_flush,
+    decide_stop_flush_simple,
+)
 
 
 @dataclass
@@ -298,9 +306,19 @@ def analyze_pcm(
     policy: RealtimeChunkPolicy,
     packet_samples: int,
     *,
+    pipeline: str = "legacy",
     gain: float = 1.0,
     simulate_stop_flush: bool = True,
 ) -> AudioAnalysisResult:
+    if pipeline == "simplified":
+        decide_chunk = decide_chunk_processing_simple
+        decide_stop_flush_fn = decide_stop_flush_simple
+    elif pipeline == "legacy":
+        decide_chunk = decide_chunk_processing
+        decide_stop_flush_fn = decide_stop_flush
+    else:
+        raise ValueError(f"Unsupported pipeline: {pipeline}")
+
     pcm = apply_gain(pcm, gain)
     packet_bytes = packet_samples * policy.bytes_per_sample
     bytes_per_second = float(policy.sample_rate * policy.bytes_per_sample)
@@ -319,7 +337,7 @@ def analyze_pcm(
         packet = pcm[offset : offset + packet_bytes]
         buffer.extend(packet)
         bytes_consumed += len(packet)
-        decision = decide_chunk_processing(bytes(buffer), policy)
+        decision = decide_chunk(bytes(buffer), policy)
         gate_reasons[decision.speech_gate_reason or "-"] += 1
         tail_gate_reasons[decision.tail_gate_reason or "-"] += 1
 
@@ -352,7 +370,7 @@ def analyze_pcm(
     final_buffer_seconds = len(buffer) / bytes_per_second
 
     if simulate_stop_flush and buffer:
-        decision = decide_stop_flush(bytes(buffer), policy)
+        decision = decide_stop_flush_fn(bytes(buffer), policy)
         action = decision_to_action(decision, stop_flush=True)
         stop_flush_event = build_timeline_event(
             decision=decision,
@@ -369,6 +387,7 @@ def analyze_pcm(
         gain=gain,
         scenario={
             "mode": "pcm",
+            "pipeline": pipeline,
             "gain": gain,
             "simulate_stop_flush": simulate_stop_flush,
         },
@@ -395,6 +414,7 @@ def analyze_file(
     pcm_sample_rate: int = 16000,
     pcm_channels: int = 1,
     pcm_sample_width: int = 2,
+    pipeline: str = "legacy",
     gain: float = 1.0,
     clip_start_seconds: float = 0.0,
     clip_duration_seconds: float | None = None,
@@ -419,6 +439,7 @@ def analyze_file(
         pcm,
         policy,
         packet_samples=packet_samples,
+        pipeline=pipeline,
         gain=gain,
         simulate_stop_flush=simulate_stop_flush,
     )
@@ -429,6 +450,7 @@ def analyze_file(
     result.path = path
     result.scenario = {
         "mode": "single",
+        "pipeline": pipeline,
         "path": str(path),
         "input_format": resolved_format,
         "gain": gain,
@@ -449,6 +471,7 @@ def analyze_mixed_files(
     pcm_sample_rate: int = 16000,
     pcm_channels: int = 1,
     pcm_sample_width: int = 2,
+    pipeline: str = "legacy",
     foreground_gain: float = 1.0,
     background_gain: float = 1.0,
     foreground_clip_start_seconds: float = 0.0,
@@ -503,6 +526,7 @@ def analyze_mixed_files(
         mixed_pcm,
         policy,
         packet_samples=packet_samples,
+        pipeline=pipeline,
         gain=1.0,
         simulate_stop_flush=simulate_stop_flush,
     )
@@ -516,6 +540,7 @@ def analyze_mixed_files(
     result.path = foreground_path
     result.scenario = {
         "mode": "mixed",
+        "pipeline": pipeline,
         "foreground_path": str(foreground_path),
         "foreground_input_format": foreground_format,
         "foreground_gain": foreground_gain,
@@ -634,6 +659,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Offline replay wav/pcm files and inspect realtime chunk policy behavior.")
     parser.add_argument("paths", nargs="+", help="Audio file paths to analyze")
     parser.add_argument(
+        "--pipeline",
+        choices=("legacy", "simplified"),
+        default="simplified",
+        help="Realtime gating pipeline to replay (default: simplified, matching current online development path)",
+    )
+    parser.add_argument(
         "--input-format",
         choices=("auto", "wav", "pcm"),
         default="auto",
@@ -725,7 +756,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    policy = RealtimeChunkPolicy()
+    policy = build_realtime_chunk_policy(simplified=args.pipeline == "simplified")
     background_path = Path(args.mix_background).expanduser().resolve() if args.mix_background else None
     all_results: list[AudioAnalysisResult] = []
     for raw_path in args.paths:
@@ -741,6 +772,7 @@ def main() -> int:
                     pcm_sample_rate=args.pcm_sample_rate,
                     pcm_channels=args.pcm_channels,
                     pcm_sample_width=args.pcm_sample_width,
+                    pipeline=args.pipeline,
                     foreground_gain=gain,
                     background_gain=background_gain,
                     foreground_clip_start_seconds=args.clip_start_seconds,
@@ -765,6 +797,7 @@ def main() -> int:
                     pcm_sample_rate=args.pcm_sample_rate,
                     pcm_channels=args.pcm_channels,
                     pcm_sample_width=args.pcm_sample_width,
+                    pipeline=args.pipeline,
                     gain=gain,
                     clip_start_seconds=args.clip_start_seconds,
                     clip_duration_seconds=args.clip_duration_seconds,

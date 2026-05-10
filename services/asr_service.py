@@ -140,6 +140,24 @@ class SegmentRewriteDecision:
     reason: str
 
 
+def build_realtime_chunk_policy(*, simplified: bool) -> RealtimeChunkPolicy:
+    if simplified:
+        return RealtimeChunkPolicy(
+            min_audio_seconds=0.6,
+            max_audio_seconds=12.0,
+            chunk_seconds=2.5,
+            stop_flush_min_seconds=0.25,
+            min_speech_frames=60,
+            uncertain_retain_seconds=0.6,
+        )
+    return RealtimeChunkPolicy(
+        min_audio_seconds=1.0,
+        max_audio_seconds=30.0,
+        chunk_seconds=10.0,
+        min_speech_frames=100,
+    )
+
+
 REALTIME_POLICY_PARSERS = {
     "min_audio_seconds": float,
     "max_audio_seconds": float,
@@ -555,6 +573,18 @@ def _decide_simplified_upload_gate(
             tail_gate_reason=tail_gate_reason,
         )
 
+    if speech_gate_reason in {"no_usable_speech", "fragmented_voiced_presence"}:
+        return ChunkDecision(
+            should_process=False,
+            reason=f"simplified_drop_non_speech_after_{trigger_reason}",
+            audio_duration_seconds=duration_seconds,
+            trailing_silence_detected=trailing_silence_detected,
+            drop_buffer=True,
+            audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+            tail_gate_reason=tail_gate_reason,
+        )
+
     if is_weak_background_audio(features, policy):
         return ChunkDecision(
             should_process=False,
@@ -566,16 +596,6 @@ def _decide_simplified_upload_gate(
             speech_gate_reason=speech_gate_reason,
             tail_gate_reason=tail_gate_reason,
         )
-
-    return ChunkDecision(
-        should_process=True,
-        reason=f"simplified_fallback_{trigger_reason}",
-        audio_duration_seconds=duration_seconds,
-        trailing_silence_detected=trailing_silence_detected,
-        audio_features=features,
-        speech_gate_reason=speech_gate_reason,
-        tail_gate_reason=tail_gate_reason,
-    )
 
 
 def decide_chunk_processing_simple(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDecision:

@@ -503,3 +503,21 @@
   - `AGENTS.md`
   - `docs/PM/CODEX_PLAYBOOK.md`
 - 目的：避免再次把中文 Markdown 写成 `?`、乱码或不可逆污染。
+
+## 2026-05-10 / 真实 PCM 驱动的 simplified 门控校准启动
+- 已确认：`temp_audio/` 下的真实 PCM 录音可以按前端实时包粒度重放；当前分析工具默认使用 `packet_samples=512`，等价于按约 32ms 一包回放。
+- 本轮先修正了一个关键校准前提：
+  - 离线分析工具现在已支持 `--pipeline simplified|legacy`
+  - 默认口径改为 `simplified`，与当前外网开发模式的实时转写主链路保持一致
+- 基于真实 PCM 样本观察到的主要问题：
+  - 之前 simplified 管线里存在 `simplified_fallback_*` 路径
+  - 一些 `speech_gate_reason=no_usable_speech` 的片段，仍会在 chunk 边界或尾静音边界被错误放行
+  - 这类片段高度可疑，会直接对应用户抱怨的“说完后一直冒嗯、Thank you、Okay 一类尾巴”
+- 本轮已收紧 simplified 上传门控：
+  - 当 `speech_gate_reason` 为 `no_usable_speech` 或 `fragmented_voiced_presence` 时，不再 fallback 放行
+  - 这类片段现在直接走 `simplified_drop_non_speech_after_*`
+  - `tail_short_speech_detected` 的极短真实语音兜底仍保留
+- 真实样本离线观察结果（口径：simplified）显示：
+  - 多条样本中的 `simplified_fallback_*` 已被消除
+  - 对应增加为 `simplified_drop_non_speech_after_chunk_duration_reached` / `simplified_drop_non_speech_after_tail_silence_detected`
+  - 说明本轮收紧主要打在“非语音被误放行”而不是“正常强语音”

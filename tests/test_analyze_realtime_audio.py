@@ -96,6 +96,23 @@ class RealtimeAudioAnalyzerTests(unittest.TestCase):
         self.assertEqual(significant_events[0].speech_gate_reason, "strong_signal")
         self.assertAlmostEqual(significant_events[0].stream_end_seconds, 1.0, places=2)
 
+    def test_analyze_pcm_supports_simplified_pipeline(self):
+        policy = analyze_realtime_audio.build_realtime_chunk_policy(simplified=True)
+        strong_audio = pcm_window(900, int(16000 * 2.6))
+
+        result = analyze_realtime_audio.analyze_pcm(
+            strong_audio,
+            policy,
+            packet_samples=512,
+            pipeline="simplified",
+            simulate_stop_flush=False,
+        )
+
+        self.assertEqual(result.process_count, 1)
+        self.assertEqual(result.scenario["pipeline"], "simplified")
+        significant_events = [event for event in result.timeline_events if event.action != "waiting"]
+        self.assertEqual(significant_events[0].reason, "chunk_duration_reached")
+
     def test_analyze_pcm_simulates_strong_stop_flush(self):
         policy = RealtimeChunkPolicy(chunk_seconds=10.0, stop_flush_min_seconds=0.35)
         tail_audio = pcm_window(900, int(16000 * 0.45))
@@ -213,6 +230,7 @@ class RealtimeAudioAnalyzerTests(unittest.TestCase):
 
         self.assertEqual(result.process_count, 1)
         self.assertEqual(result.scenario["input_format"], "pcm")
+        self.assertEqual(result.scenario["pipeline"], "legacy")
         self.assertEqual(result.path.name, "sample.pcm")
 
 
