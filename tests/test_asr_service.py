@@ -6,6 +6,7 @@ from services.asr_service import (
     describe_tail_triggerable_speech,
     describe_usable_speech,
     extract_audio_features,
+    format_asr_display_text,
     has_tail_triggerable_speech,
     load_realtime_chunk_policy_overrides,
     is_effective_text_update,
@@ -274,7 +275,7 @@ class AudioFeatureTests(unittest.TestCase):
         self.assertEqual(simplified_policy.chunk_seconds, 2.5)
         self.assertEqual(simplified_policy.min_audio_seconds, 0.6)
         self.assertEqual(simplified_policy.max_audio_seconds, 12.0)
-        self.assertEqual(simplified_policy.min_tail_chunk_seconds, 1.4)
+        self.assertEqual(simplified_policy.min_tail_chunk_seconds, 2.0)
         self.assertEqual(legacy_policy.chunk_seconds, 10.0)
         self.assertEqual(legacy_policy.min_audio_seconds, 1.0)
         self.assertEqual(legacy_policy.max_audio_seconds, 30.0)
@@ -426,6 +427,26 @@ class TranscriptTextHeuristicTests(unittest.TestCase):
         self.assertFalse(is_effective_text_update("今天开始。", "今天开始"))
         self.assertFalse(is_effective_text_update("嗯 今天开始", "今天开始"))
         self.assertTrue(is_effective_text_update("今天开始", "今天开始讨论方案"))
+
+
+class DisplayTextFormattingTests(unittest.TestCase):
+    def test_keeps_meaningful_punctuation_after_stripping_fillers(self):
+        self.assertEqual(
+            format_asr_display_text("Yeah. Thank you. 嗯。现在我看这个静音。并没有被过滤掉。嗯。"),
+            "现在我看这个静音。并没有被过滤掉。",
+        )
+
+    def test_preserves_clause_punctuation_for_display(self):
+        self.assertEqual(
+            format_asr_display_text("归纳，禁止编造。"),
+            "归纳，禁止编造。",
+        )
+
+    def test_can_force_sentence_end_punctuation(self):
+        self.assertEqual(
+            format_asr_display_text("可以对已有信息进行合理扩充", ensure_sentence_end=True),
+            "可以对已有信息进行合理扩充。",
+        )
 
 
 class SegmentRewriteDecisionTests(unittest.TestCase):

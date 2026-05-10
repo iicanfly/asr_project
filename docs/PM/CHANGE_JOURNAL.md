@@ -1026,3 +1026,24 @@
 - 当前结果：
   - “回写从未触发”这一点已被证伪；本轮真实 trace 已明确看到回写事件。
   - 当前更核心的问题，已收缩为并发 drain 导致的重复处理与停止事件异常。
+
+### 2026-05-10 / Commit 待提交
+- 主题：
+  - 优化实时转写的分段策略，并恢复前端展示里的逗号、句号。
+- 修改内容：
+  - `services/asr_service.py`
+    - simplified 实时策略的 `min_tail_chunk_seconds` 从 `1.4` 调整为 `2.0`，减少轻微停顿就被当成断段。
+    - 新增 `format_asr_display_text()`，基于 ASR 原始文本保留有效标点，同时继续去掉语气词片段。
+  - `main.py`
+    - `segment_partial` / `segment_rewrite` 发送到前端前，改为使用展示文本格式化结果。
+    - 段落 finalize 时，若末尾缺少句号，则自动补全句末标点。
+- 验证方式：
+  - `conda run --no-capture-output -n asr python -m py_compile main.py services/asr_service.py tests/test_asr_service.py`
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+  - 使用 `socketio.test_client()` 回放真实 PCM，已观察到输出示例：
+    - `重要约束。`
+    - `归纳，禁止编造。`
+    - `重要约束。基于转写中的事实进行总结和归纳，禁止编造转写中完全没有。`
+- 当前结果：
+  - 前端展示文本已不再是完全无标点的“连字串”。
+  - 分段策略变得更保守，优先减少过早切段。

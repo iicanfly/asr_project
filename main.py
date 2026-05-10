@@ -29,6 +29,7 @@ from services.asr_service import (
     decide_segment_rewrite,
     decide_stop_flush,
     decide_stop_flush_simple,
+    format_asr_display_text,
     refine_asr_result_text,
     retain_realtime_buffer,
     should_filter_asr_result,
@@ -431,6 +432,10 @@ def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision,
         segment_text_result = transcribe_realtime_chunk(bytes(active_segment['audio_buffer']))
         refined_segment_text = refine_asr_result_text(segment_text_result)
         if refined_segment_text and not should_filter_asr_result(refined_segment_text):
+            display_segment_text = format_asr_display_text(
+                segment_text_result,
+                ensure_sentence_end=should_finalize_segment,
+            ) or refined_segment_text
             if not is_effective_text_update(active_segment.get('latest_display_text', ''), refined_segment_text):
                 active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
                 logger.info(
@@ -442,7 +447,7 @@ def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision,
             else:
                 rewrite_payload = build_realtime_result_payload(
                     session,
-                    refined_segment_text,
+                    display_segment_text,
                     chunk_decision,
                     segment_id=active_segment['segment_id'],
                     replace_target_id=active_segment['last_result_id'],
@@ -457,10 +462,10 @@ def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision,
                     rewrite_reason,
                     active_segment['chunk_count'],
                     active_segment['duration_seconds'],
-                    refined_segment_text[:50],
+                    display_segment_text[:50],
                 )
             active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
-            active_segment['latest_display_text'] = refined_segment_text
+            active_segment['latest_display_text'] = display_segment_text
         elif segment_text_result:
             logger.info(
                 "ASR 段级回写结果被过滤(segment=%s, reason=%s, 原始=%s, 清洗后=%s)",
@@ -520,6 +525,7 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
         is_filtered_result = not refined_text_result or should_filter_asr_result(refined_text_result)
 
         if refined_text_result and not is_filtered_result:
+            display_text_result = format_asr_display_text(text_result) or refined_text_result
             if not is_effective_text_update(active_segment.get('latest_display_text', ''), refined_text_result):
                 logger.info(
                     "Skipping noop partial result(segment=%s, chunks=%s, text=%s)",
@@ -530,7 +536,7 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
             else:
                 partial_payload = build_realtime_result_payload(
                     session,
-                    refined_text_result,
+                    display_text_result,
                     chunk_decision,
                     segment_id=active_segment['segment_id'],
                     result_type="segment_partial",
@@ -538,12 +544,12 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                 append_realtime_debug_trace("emit_asr_result", partial_payload)
                 emit("asr_result", partial_payload)
                 active_segment['last_result_id'] = partial_payload["result_id"]
-                active_segment['latest_display_text'] = refined_text_result
+                active_segment['latest_display_text'] = display_text_result
                 logger.info(
                     "ASR partial emitted(result_id=%s, raw=%s, refined=%s, segment=%s, chunks=%s)",
                     partial_payload["result_id"],
                     text_result[:50] if text_result else "",
-                    refined_text_result[:50],
+                    display_text_result[:50],
                     active_segment['segment_id'],
                     active_segment['chunk_count'],
                 )

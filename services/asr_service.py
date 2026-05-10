@@ -46,6 +46,14 @@ BOUNDARY_PUNCTUATION = "，。！？、；：,.!?;:~… "
 SEGMENT_SPLIT_PUNCTUATION = "，。！？、；：,.!?;:~…"
 SENTENCE_END_PUNCTUATION = "。！？!?；;"
 CONTINUATION_ENDING_CHARS = set("的地得了着呢吗嘛吧啊呀呗么和与及并且而又在将把给让向对")
+DISPLAY_PUNCTUATION_MAP = {
+    ",": "，",
+    ".": "。",
+    "?": "？",
+    "!": "！",
+    ";": "；",
+    ":": "：",
+}
 
 
 @dataclass(frozen=True)
@@ -148,7 +156,7 @@ def build_realtime_chunk_policy(*, simplified: bool) -> RealtimeChunkPolicy:
             min_audio_seconds=0.6,
             max_audio_seconds=12.0,
             chunk_seconds=2.5,
-            min_tail_chunk_seconds=1.4,
+            min_tail_chunk_seconds=2.0,
             stop_flush_min_seconds=0.25,
             min_speech_frames=60,
             uncertain_retain_seconds=0.6,
@@ -1068,6 +1076,38 @@ def _split_transcript_segments(text: str) -> list[str]:
     return [part.strip() for part in re.split(rf"[{re.escape(SEGMENT_SPLIT_PUNCTUATION)}]+", normalized) if part.strip()]
 
 
+def _split_text_with_trailing_punctuation(text: str) -> list[tuple[str, str]]:
+    normalized = _normalize_asr_text(text)
+    if not normalized:
+        return []
+
+    parts: list[tuple[str, str]] = []
+    pattern = re.compile(rf"([^{re.escape(SEGMENT_SPLIT_PUNCTUATION)}]+)([{re.escape(SEGMENT_SPLIT_PUNCTUATION)}]*)")
+    for match in pattern.finditer(normalized):
+        segment = match.group(1).strip()
+        punctuation = match.group(2) or ""
+        if segment:
+            parts.append((segment, punctuation))
+    return parts
+
+
+def _normalize_display_punctuation(punctuation: str) -> str:
+    if not punctuation:
+        return ""
+
+    normalized = "".join(DISPLAY_PUNCTUATION_MAP.get(char, char) for char in punctuation if char.strip())
+    if not normalized:
+        return ""
+
+    for candidate in "。！？":
+        if candidate in normalized:
+            return candidate
+    for candidate in "，；：、":
+        if candidate in normalized:
+            return candidate
+    return ""
+
+
 def _join_transcript_segments(segments: Sequence[str]) -> str:
     joined_parts: list[str] = []
     for segment in segments:
@@ -1210,6 +1250,39 @@ def refine_asr_result_text(
     if meaningful_count > 0 and cleaned_text:
         refined = cleaned_text
     return _normalize_asr_text(refined)
+
+
+def format_asr_display_text(
+    text: str,
+    filler_words: Sequence[str] = DEFAULT_FILLER_WORDS,
+    *,
+    ensure_sentence_end: bool = False,
+) -> str:
+    normalized_text = _normalize_asr_text(text)
+    if not normalized_text:
+        return ""
+
+    display_parts: list[str] = []
+    for segment, punctuation in _split_text_with_trailing_punctuation(normalized_text):
+        refined_segment = refine_asr_result_text(segment, filler_words=filler_words)
+        if not refined_segment:
+            continue
+        if _is_low_information_segment(refined_segment, filler_words=filler_words):
+            continue
+
+        display_parts.append(refined_segment)
+        normalized_punctuation = _normalize_display_punctuation(punctuation)
+        if normalized_punctuation:
+            display_parts.append(normalized_punctuation)
+
+    display_text = "".join(display_parts).strip()
+    if not display_text:
+        display_text = refine_asr_result_text(normalized_text, filler_words=filler_words)
+
+    if ensure_sentence_end and display_text and display_text[-1] not in "。！？":
+        display_text = f"{display_text}。"
+
+    return _normalize_asr_text(display_text)
 
 
 def should_filter_asr_result(text: str, filler_words: Sequence[str] = DEFAULT_FILLER_WORDS) -> bool:

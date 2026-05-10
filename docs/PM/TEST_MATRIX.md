@@ -319,3 +319,24 @@
   1. 第二段是否还会出现“整句重复 3 次”；
   2. 停止录音后是否还有异常或漏刷；
   3. `/api/v1/debug/realtime_trace` 中 `segment_rewrite` 与页面展示是否一致。
+
+## 2026-05-10 / 分段阈值与标点恢复回归
+### 自动化验证
+- 语法检查：
+  - `conda run --no-capture-output -n asr python -m py_compile main.py services/asr_service.py tests/test_asr_service.py`
+- 单元测试：
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+- 结果：
+  - 61/61 通过。
+
+### 脚本化链路回放
+- 方法：
+  - 使用 `socketio.test_client()` 回放真实 PCM 文件 `temp_audio/stream_recording_20260510_231053.pcm` 的前 450000 字节。
+- 观察点：
+  1. `segment_partial` 是否开始带句号；
+  2. `segment_rewrite` 是否开始带逗号、句号；
+  3. stop finalize 时是否能补齐句末标点。
+- 当前结果：
+  - 已看到 `重要约束。`
+  - 已看到 `归纳，禁止编造。`
+  - 已看到带句号的 `segment_rewrite` 输出。
