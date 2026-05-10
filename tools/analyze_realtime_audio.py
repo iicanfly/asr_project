@@ -98,6 +98,79 @@ def load_wav_as_mono_pcm16(path: Path, target_rate: int = 16000) -> bytes:
     return raw
 
 
+def load_pcm_as_mono_pcm16(
+    path: Path,
+    *,
+    source_rate: int = 16000,
+    source_channels: int = 1,
+    source_sample_width: int = 2,
+    target_rate: int = 16000,
+) -> bytes:
+    raw = path.read_bytes()
+    if source_channels < 1:
+        raise ValueError(f"Invalid PCM channel count: {source_channels}")
+    if source_channels > 2:
+        raise ValueError("PCM analyzer currently supports mono or stereo input only")
+
+    if source_sample_width != 2:
+        raw = audioop.lin2lin(raw, source_sample_width, 2)
+        source_sample_width = 2
+
+    if source_channels == 2:
+        raw = audioop.tomono(raw, source_sample_width, 0.5, 0.5)
+        source_channels = 1
+
+    if source_rate != target_rate:
+        raw, _ = audioop.ratecv(
+            raw,
+            source_sample_width,
+            source_channels,
+            source_rate,
+            target_rate,
+            None,
+        )
+
+    return raw
+
+
+def detect_input_format(path: Path, requested_format: str) -> str:
+    if requested_format != "auto":
+        return requested_format
+
+    suffix = path.suffix.lower()
+    if suffix == ".wav":
+        return "wav"
+    if suffix == ".pcm":
+        return "pcm"
+    raise ValueError(f"Cannot auto-detect input format for: {path}")
+
+
+def load_audio_as_mono_pcm16(
+    path: Path,
+    *,
+    input_format: str = "auto",
+    target_rate: int = 16000,
+    pcm_sample_rate: int = 16000,
+    pcm_channels: int = 1,
+    pcm_sample_width: int = 2,
+) -> tuple[bytes, str]:
+    resolved_format = detect_input_format(path, input_format)
+    if resolved_format == "wav":
+        return load_wav_as_mono_pcm16(path, target_rate=target_rate), resolved_format
+    if resolved_format == "pcm":
+        return (
+            load_pcm_as_mono_pcm16(
+                path,
+                source_rate=pcm_sample_rate,
+                source_channels=pcm_channels,
+                source_sample_width=pcm_sample_width,
+                target_rate=target_rate,
+            ),
+            resolved_format,
+        )
+    raise ValueError(f"Unsupported input format: {resolved_format}")
+
+
 def clip_pcm(
     pcm: bytes,
     *,
@@ -318,12 +391,23 @@ def analyze_file(
     policy: RealtimeChunkPolicy,
     packet_samples: int,
     *,
+    input_format: str = "auto",
+    pcm_sample_rate: int = 16000,
+    pcm_channels: int = 1,
+    pcm_sample_width: int = 2,
     gain: float = 1.0,
     clip_start_seconds: float = 0.0,
     clip_duration_seconds: float | None = None,
     simulate_stop_flush: bool = True,
 ) -> AudioAnalysisResult:
-    pcm = load_wav_as_mono_pcm16(path, target_rate=policy.sample_rate)
+    pcm, resolved_format = load_audio_as_mono_pcm16(
+        path,
+        input_format=input_format,
+        target_rate=policy.sample_rate,
+        pcm_sample_rate=pcm_sample_rate,
+        pcm_channels=pcm_channels,
+        pcm_sample_width=pcm_sample_width,
+    )
     pcm = clip_pcm(
         pcm,
         start_seconds=clip_start_seconds,
@@ -346,6 +430,7 @@ def analyze_file(
     result.scenario = {
         "mode": "single",
         "path": str(path),
+        "input_format": resolved_format,
         "gain": gain,
         "clip_start_seconds": clip_start_seconds,
         "clip_duration_seconds": clip_duration_seconds,
@@ -360,6 +445,10 @@ def analyze_mixed_files(
     policy: RealtimeChunkPolicy,
     packet_samples: int,
     *,
+    input_format: str = "auto",
+    pcm_sample_rate: int = 16000,
+    pcm_channels: int = 1,
+    pcm_sample_width: int = 2,
     foreground_gain: float = 1.0,
     background_gain: float = 1.0,
     foreground_clip_start_seconds: float = 0.0,
@@ -370,8 +459,22 @@ def analyze_mixed_files(
     tail_silence_seconds: float = 0.0,
     simulate_stop_flush: bool = True,
 ) -> AudioAnalysisResult:
-    foreground_pcm = load_wav_as_mono_pcm16(foreground_path, target_rate=policy.sample_rate)
-    background_pcm = load_wav_as_mono_pcm16(background_path, target_rate=policy.sample_rate)
+    foreground_pcm, foreground_format = load_audio_as_mono_pcm16(
+        foreground_path,
+        input_format=input_format,
+        target_rate=policy.sample_rate,
+        pcm_sample_rate=pcm_sample_rate,
+        pcm_channels=pcm_channels,
+        pcm_sample_width=pcm_sample_width,
+    )
+    background_pcm, background_format = load_audio_as_mono_pcm16(
+        background_path,
+        input_format=input_format,
+        target_rate=policy.sample_rate,
+        pcm_sample_rate=pcm_sample_rate,
+        pcm_channels=pcm_channels,
+        pcm_sample_width=pcm_sample_width,
+    )
     foreground_pcm = clip_pcm(
         foreground_pcm,
         start_seconds=foreground_clip_start_seconds,
@@ -414,10 +517,12 @@ def analyze_mixed_files(
     result.scenario = {
         "mode": "mixed",
         "foreground_path": str(foreground_path),
+        "foreground_input_format": foreground_format,
         "foreground_gain": foreground_gain,
         "foreground_clip_start_seconds": foreground_clip_start_seconds,
         "foreground_clip_duration_seconds": foreground_clip_duration_seconds,
         "background_path": str(background_path),
+        "background_input_format": background_format,
         "background_gain": background_gain,
         "background_clip_start_seconds": background_clip_start_seconds,
         "background_clip_duration_seconds": background_clip_duration_seconds,
@@ -526,8 +631,32 @@ def select_timeline_events(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Offline replay wav files and inspect realtime chunk policy behavior.")
-    parser.add_argument("paths", nargs="+", help="Wav file paths to analyze")
+    parser = argparse.ArgumentParser(description="Offline replay wav/pcm files and inspect realtime chunk policy behavior.")
+    parser.add_argument("paths", nargs="+", help="Audio file paths to analyze")
+    parser.add_argument(
+        "--input-format",
+        choices=("auto", "wav", "pcm"),
+        default="auto",
+        help="Input format for primary/background audio (default: auto by suffix)",
+    )
+    parser.add_argument(
+        "--pcm-sample-rate",
+        type=int,
+        default=16000,
+        help="Sample rate used when reading raw PCM files (default: 16000)",
+    )
+    parser.add_argument(
+        "--pcm-channels",
+        type=int,
+        default=1,
+        help="Channel count used when reading raw PCM files (default: 1)",
+    )
+    parser.add_argument(
+        "--pcm-sample-width",
+        type=int,
+        default=2,
+        help="Bytes per sample used when reading raw PCM files (default: 2 for int16)",
+    )
     parser.add_argument("--packet-samples", type=int, default=512, help="Simulated frontend packet size in samples (default: 512)")
     parser.add_argument(
         "--gains",
@@ -608,6 +737,10 @@ def main() -> int:
                     background_path,
                     policy,
                     packet_samples=args.packet_samples,
+                    input_format=args.input_format,
+                    pcm_sample_rate=args.pcm_sample_rate,
+                    pcm_channels=args.pcm_channels,
+                    pcm_sample_width=args.pcm_sample_width,
                     foreground_gain=gain,
                     background_gain=background_gain,
                     foreground_clip_start_seconds=args.clip_start_seconds,
@@ -628,6 +761,10 @@ def main() -> int:
                     path,
                     policy,
                     packet_samples=args.packet_samples,
+                    input_format=args.input_format,
+                    pcm_sample_rate=args.pcm_sample_rate,
+                    pcm_channels=args.pcm_channels,
+                    pcm_sample_width=args.pcm_sample_width,
                     gain=gain,
                     clip_start_seconds=args.clip_start_seconds,
                     clip_duration_seconds=args.clip_duration_seconds,

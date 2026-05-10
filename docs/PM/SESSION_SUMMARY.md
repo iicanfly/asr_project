@@ -488,3 +488,10 @@
   - 对判断“到底是规则本身有问题，还是离线分析口径和线上日志不一致”很有帮助。
 - 当前还未完成的点：
   - 仍需用真实录音样本验证：如果线上误触发片段与离线重放片段的 run 指标明显不一致，说明现有样本构造方式还需继续逼近真实场景。
+## 2026-05-10 / 真实 PCM 录音回放入口补齐
+- `tools/analyze_realtime_audio.py` 已支持直接分析 `pcm` 输入，默认按 `16kHz / mono / 16bit` 解释
+- 这意味着前端自动落盘到 `temp_audio/` 的真实录音已经可以直接进入离线回放和门控分析
+- 已新增 `REALTIME_AUDIO_SAMPLE_MANIFEST.md`，用于记录样本来源、估算时长和推荐分析命令
+- 当前已验证命令：
+  - `python tools/analyze_realtime_audio.py --input-format pcm --timeline --timeline-limit 5 temp_audio\stream_recording_20260510_183243.pcm`
+  - 命令可正常输出 `process/drop/waiting/stop_flush` 时间线

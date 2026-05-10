@@ -845,3 +845,8 @@
   - 用户已明确反馈当前版本启动时出现该报错。
 - 后续动作：
   - 若用户的 asr 环境仍提示缺包，再继续处理依赖问题。
+## 2026-05-10 / 本轮：接入真实 PCM 录音离线分析
+- 改动：`tools/analyze_realtime_audio.py` 新增 `pcm` 输入支持，可直接分析 `temp_audio/` 下前端自动落盘的真实录音
+- 改动：补充 `tests/test_analyze_realtime_audio.py`，覆盖 `pcm` 输入路径
+- 新增：`docs/PM/REALTIME_AUDIO_SAMPLE_MANIFEST.md`，沉淀本地样本来源、估算时长和推荐命令
+- 验证：`python -m unittest tests.test_analyze_realtime_audio` 通过；真实样本 `stream_recording_20260510_183243.pcm` 可直接跑出时间线

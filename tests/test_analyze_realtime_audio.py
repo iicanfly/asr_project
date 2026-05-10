@@ -28,6 +28,16 @@ def pcm_to_samples(pcm: bytes) -> list[int]:
 
 
 class RealtimeAudioAnalyzerTests(unittest.TestCase):
+    def test_detect_input_format_uses_suffix_when_auto(self):
+        self.assertEqual(
+            analyze_realtime_audio.detect_input_format(Path("demo.wav"), "auto"),
+            "wav",
+        )
+        self.assertEqual(
+            analyze_realtime_audio.detect_input_format(Path("demo.pcm"), "auto"),
+            "pcm",
+        )
+
     def test_clip_pcm_supports_start_and_duration(self):
         clipped = analyze_realtime_audio.clip_pcm(
             pcm_window(1000, 4) + pcm_window(2000, 4) + pcm_window(3000, 4),
@@ -182,6 +192,28 @@ class RealtimeAudioAnalyzerTests(unittest.TestCase):
         self.assertEqual(len(payload), 1)
         self.assertEqual(payload[0]["label"], result.label)
         self.assertEqual(payload[0]["scenario"]["mode"], "pcm")
+
+    def test_analyze_file_supports_raw_pcm_input(self):
+        policy = RealtimeChunkPolicy(chunk_seconds=1.0, max_audio_seconds=5.0)
+        raw_pcm = pcm_window(900, 16000)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pcm_path = Path(tmp_dir) / "sample.pcm"
+            pcm_path.write_bytes(raw_pcm)
+            result = analyze_realtime_audio.analyze_file(
+                pcm_path,
+                policy,
+                packet_samples=512,
+                input_format="pcm",
+                pcm_sample_rate=16000,
+                pcm_channels=1,
+                pcm_sample_width=2,
+                simulate_stop_flush=False,
+            )
+
+        self.assertEqual(result.process_count, 1)
+        self.assertEqual(result.scenario["input_format"], "pcm")
+        self.assertEqual(result.path.name, "sample.pcm")
 
 
 if __name__ == "__main__":

@@ -221,3 +221,8 @@
 - 手工补充检查：
   - 当通过 `.env` 设置 `ONLINE_REALTIME_*` 或 `INTRANET_REALTIME_*` 后，启动日志应能看到实际生效的覆盖项。
   - 调整某个实时门槛后，离线回放工具与页面真实录音日志应体现出一致的行为变化。
+## 2026-05-10 / 真实 PCM 样本离线回放回归
+- 新增固定命令入口：`python tools/analyze_realtime_audio.py --input-format pcm ...`
+- 回归目标：直接复盘 `temp_audio/` 下的真实录音，不再要求先手工转 WAV
+- 关注指标：`process_count`、`drop_count`、`speech_gate_reasons`、`tail_gate_reasons`、`stop_flush_event`、`timeline_events`
+- 使用场景：静音过滤、弱语音、尾静音补刷、长录音稳定性调参
