@@ -62,7 +62,7 @@
     - 当同一个 `result_id` 被重复投递时，前端也不应重复渲染。
 - 静音过滤 / 弱语音专项观察：
   - 后端日志里应重点看 `Dropping realtime buffer` 与 `Processing realtime chunk` 两类日志。
-  - 观察 `rms / peak / active / voiced / active_s / voiced_s / silence` 指标与实际听感是否一致。
+  - 观察 `rms / peak / active / voiced / active_s / voiced_s / active_run_s / voiced_run_s / silence` 指标与实际听感是否一致。
   - 如果旁边人的小声说话明显减少触发，同时主说话人的弱音没有被大量漏掉，说明第一轮阈值方向正确。
 - 语气词过滤专项观察：
   - 后端日志里应同时观察“原始结果 / 清洗后结果”，确认是否把低价值语气词成功收敛。
@@ -174,6 +174,14 @@
   - `tests/test_analyze_realtime_audio.py` 应覆盖：
     - 结构化结果中的 `scenario` 与 `timeline_events` 字段；
     - JSON 文件写出后可被正确读取。
+
+### 2026-05-10 / 连续有声时长补充
+- 自动化补充检查：
+  - 如果某段音频的 `voiced_ratio` 与 `voiced_seconds` 看起来够，但这些有声帧只是零散碎片、最长连续有声时长不足，则不应再被视为 `sustained_voiced`。
+  - 尾静音触发场景下，如果只是零散碎片式有声存在，也不应继续走 `tail_sustained_presence`。
+- 手工补充检查：
+  - 明早真实录音时，重点观察误触发片段的 `voiced_run_s` 是否明显偏低；如果是，就说明这轮规则命中了“碎片化弱插话”这个方向。
+  - 同时也要观察主说话人的轻声短句是否依然保留，避免把“连续有声时长”门槛设得过严。
 
 ### 2026-05-10 / gain sweep 补充
 - 工具：

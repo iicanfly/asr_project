@@ -183,6 +183,41 @@ class AudioFeatureTests(unittest.TestCase):
         self.assertFalse(has_usable_speech(features, policy))
         self.assertEqual(describe_usable_speech(features, policy), "no_usable_speech")
 
+    def test_fragmented_voiced_presence_is_not_treated_as_sustained_voiced(self):
+        policy = RealtimeChunkPolicy(chunk_seconds=1.0)
+        fragmented_audio = pcm_frames(([320, 0] * 16) + ([0] * 96))
+        features = extract_audio_features(fragmented_audio)
+
+        self.assertGreaterEqual(features.voiced_ratio, policy.min_voiced_ratio)
+        self.assertGreaterEqual(features.voiced_seconds, 0.12)
+        self.assertLess(features.max_voiced_run_seconds, policy.min_voiced_run_seconds)
+        self.assertFalse(has_usable_speech(features, policy))
+        self.assertEqual(describe_usable_speech(features, policy), "fragmented_voiced_presence")
+
+        decision = decide_chunk_processing(fragmented_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertEqual(decision.reason, "drop_weak_audio_at_chunk_duration")
+
+    def test_tail_trigger_rejects_fragmented_voiced_presence(self):
+        policy = RealtimeChunkPolicy(
+            min_audio_seconds=0.5,
+            chunk_seconds=5.0,
+            max_audio_seconds=30.0,
+            tail_silence_bytes=4096,
+        )
+        fragmented_tail_audio = pcm_frames(([320, 0] * 10) + ([0] * 64))
+        features = extract_audio_features(fragmented_tail_audio)
+
+        self.assertEqual(describe_usable_speech(features, policy), "fragmented_voiced_presence")
+        self.assertEqual(describe_tail_triggerable_speech(features, policy), "fragmented_voiced_presence")
+        self.assertFalse(has_tail_triggerable_speech(features, policy))
+
+        decision = decide_chunk_processing(fragmented_tail_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertEqual(decision.reason, "drop_brief_tail_speech")
+
 
 class FilterResultTests(unittest.TestCase):
     def test_filters_short_or_filler_only_text(self):

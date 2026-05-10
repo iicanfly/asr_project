@@ -577,3 +577,26 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 明早优先把真实弱背景样本按多 offset / 多增益方式导出成 JSON，再和今晚的合成场景结果对照。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第二十四轮：连续有声时长约束。
+- 修改内容：
+  - `services/asr_service.py` 中为 `AudioFeatures` 新增 `max_active_run_seconds` 与 `max_voiced_run_seconds`。
+  - `RealtimeChunkPolicy` 新增连续时长门槛，实时主路径与尾静音路径都开始检查“最长连续有声时长”。
+  - 对“累计有声量够、但只是零散碎片”的场景，`describe_usable_speech()` 现在会明确落到碎片化路径，而不是继续当作持续语音放行。
+  - `main.py` 日志新增 `active_run_s / voiced_run_s` 输出。
+  - `tests/test_asr_service.py` 新增碎片化有声场景测试与尾静音碎片场景测试。
+- 目的：
+  - 直接压制“总量看起来够、但实际上只是零散弱插话”的误触发。
+  - 把前几轮离线分析得到的结论落实到线上判定规则里。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/check_doc_corruption.py` 待本轮提交前执行。
+- 当前结果：
+  - 现在系统已经不只看累计 `voiced_ratio / voiced_seconds`，还会看 `voiced_run_s`，更容易拦住碎片化弱插话。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 明早优先对照误触发片段的 `voiced_run_s`，判断这轮规则是否真正命中目标场景。

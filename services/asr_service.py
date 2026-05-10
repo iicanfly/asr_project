@@ -35,11 +35,14 @@ class RealtimeChunkPolicy:
     min_voiced_ratio: float = 0.08
     min_active_seconds: float = 0.75
     min_voiced_seconds: float = 0.4
+    min_voiced_run_seconds: float = 0.08
+    min_active_run_seconds: float = 0.18
     active_speech_rms_threshold: float = 0.0032
     active_speech_peak_threshold: int = 220
     min_voiced_density_for_soft_speech: float = 0.2
     tail_trigger_min_active_seconds: float = 0.28
     tail_trigger_min_voiced_seconds: float = 0.12
+    tail_trigger_min_voiced_run_seconds: float = 0.06
     weak_audio_rms_threshold: float = 0.0022
     weak_audio_peak_threshold: int = 180
     strong_silence_ratio_threshold: float = 0.92
@@ -54,6 +57,8 @@ class AudioFeatures:
     voiced_ratio: float
     silence_ratio: float
     frame_count: int
+    max_active_run_seconds: float
+    max_voiced_run_seconds: float
 
     @property
     def active_seconds(self) -> float:
@@ -119,11 +124,14 @@ REALTIME_POLICY_PARSERS = {
     "min_voiced_ratio": float,
     "min_active_seconds": float,
     "min_voiced_seconds": float,
+    "min_voiced_run_seconds": float,
+    "min_active_run_seconds": float,
     "active_speech_rms_threshold": float,
     "active_speech_peak_threshold": int,
     "min_voiced_density_for_soft_speech": float,
     "tail_trigger_min_active_seconds": float,
     "tail_trigger_min_voiced_seconds": float,
+    "tail_trigger_min_voiced_run_seconds": float,
     "weak_audio_rms_threshold": float,
     "weak_audio_peak_threshold": int,
     "strong_silence_ratio_threshold": float,
@@ -255,25 +263,29 @@ def extract_audio_features(
         bytes_per_sample=bytes_per_sample,
     )
     if not audio_data:
-        return AudioFeatures(duration_seconds, 0.0, 0, 0.0, 0.0, 1.0, 0)
+        return AudioFeatures(duration_seconds, 0.0, 0, 0.0, 0.0, 1.0, 0, 0.0, 0.0)
 
     samples = [
         int.from_bytes(audio_data[i : i + 2], "little", signed=True)
         for i in range(0, len(audio_data), 2)
     ]
     if not samples:
-        return AudioFeatures(duration_seconds, 0.0, 0, 0.0, 0.0, 1.0, 0)
+        return AudioFeatures(duration_seconds, 0.0, 0, 0.0, 0.0, 1.0, 0, 0.0, 0.0)
 
     overall_rms = (sum(sample ** 2 for sample in samples) / len(samples)) ** 0.5 / 32768.0
     overall_peak = max(abs(sample) for sample in samples)
     frame_count = len(samples) // frame_size
 
     if frame_count <= 0:
-        return AudioFeatures(duration_seconds, overall_rms, overall_peak, 0.0, 0.0, 1.0, 0)
+        return AudioFeatures(duration_seconds, overall_rms, overall_peak, 0.0, 0.0, 1.0, 0, 0.0, 0.0)
 
     active_frames = 0
     voiced_frames = 0
     silence_frames = 0
+    current_active_run = 0
+    current_voiced_run = 0
+    max_active_run = 0
+    max_voiced_run = 0
 
     for i in range(frame_count):
         start = i * frame_size
@@ -289,11 +301,18 @@ def extract_audio_features(
 
         if is_active:
             active_frames += 1
+            current_active_run += 1
+            max_active_run = max(max_active_run, current_active_run)
         else:
             silence_frames += 1
+            current_active_run = 0
 
         if is_voiced:
             voiced_frames += 1
+            current_voiced_run += 1
+            max_voiced_run = max(max_voiced_run, current_voiced_run)
+        else:
+            current_voiced_run = 0
 
     return AudioFeatures(
         duration_seconds=duration_seconds,
@@ -303,6 +322,8 @@ def extract_audio_features(
         voiced_ratio=voiced_frames / frame_count,
         silence_ratio=silence_frames / frame_count,
         frame_count=frame_count,
+        max_active_run_seconds=max_active_run * frame_size / sample_rate,
+        max_voiced_run_seconds=max_voiced_run * frame_size / sample_rate,
     )
 
 
@@ -336,18 +357,29 @@ def describe_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy)
     sustained_voiced = (
         features.voiced_ratio >= policy.min_voiced_ratio
         and features.voiced_seconds >= required_voiced_seconds
+        and features.max_voiced_run_seconds >= policy.min_voiced_run_seconds
     )
     if strong_signal:
         return "strong_signal"
     if sustained_voiced:
         return "sustained_voiced"
 
+    fragmented_voiced_presence = (
+        features.voiced_ratio >= policy.min_voiced_ratio
+        and features.voiced_seconds >= required_voiced_seconds
+        and features.max_voiced_run_seconds < policy.min_voiced_run_seconds
+    )
+    if fragmented_voiced_presence:
+        return "fragmented_voiced_presence"
+
     sustained_active_speech = (
         features.active_ratio >= policy.min_active_ratio
         and features.active_seconds >= required_active_seconds
+        and features.max_active_run_seconds >= policy.min_active_run_seconds
         and features.rms >= policy.active_speech_rms_threshold
         and features.peak >= policy.active_speech_peak_threshold
         and features.voiced_ratio >= (policy.min_voiced_ratio * 0.5)
+        and features.max_voiced_run_seconds >= (policy.min_voiced_run_seconds * 0.5)
         and features.voiced_density >= policy.min_voiced_density_for_soft_speech
     )
     if sustained_active_speech:
@@ -365,7 +397,7 @@ def has_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> b
 
 def describe_tail_triggerable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> str:
     usable_reason = describe_usable_speech(features, policy)
-    if usable_reason in {"empty_audio", "no_usable_speech"}:
+    if usable_reason in {"empty_audio", "no_usable_speech", "fragmented_voiced_presence"}:
         return usable_reason
 
     strong_signal = features.rms >= policy.speech_rms_threshold and features.peak >= policy.speech_peak_threshold
@@ -375,8 +407,15 @@ def describe_tail_triggerable_speech(features: AudioFeatures, policy: RealtimeCh
     if (
         features.active_seconds >= policy.tail_trigger_min_active_seconds
         and features.voiced_seconds >= policy.tail_trigger_min_voiced_seconds
+        and features.max_voiced_run_seconds >= policy.tail_trigger_min_voiced_run_seconds
     ):
         return "tail_sustained_presence"
+    if (
+        features.active_seconds >= policy.tail_trigger_min_active_seconds
+        and features.voiced_seconds >= policy.tail_trigger_min_voiced_seconds
+        and features.max_voiced_run_seconds < policy.tail_trigger_min_voiced_run_seconds
+    ):
+        return "tail_fragmented_presence"
     return "tail_presence_too_brief"
 
 
