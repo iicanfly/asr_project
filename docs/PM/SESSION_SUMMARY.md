@@ -288,3 +288,19 @@
   - 说明现有静音过滤规则至少对“被整体压低很多的主语音”已经会进入更细的弱语音 / 丢弃分流，而不是永远只走强信号。
 - 当前还未完成的点：
   - 这种 gain sweep 只是“衰减主语音”的替代实验，还不能等价代表真实旁边低声插话或复杂背景说话场景。
+
+## 2026-05-10 / 实时转写第二十轮进展
+- 已继续补强离线分析工具的事件级可观测性。
+- 当前实现状态：
+  - `tools/analyze_realtime_audio.py` 现在会记录完整时间线事件，可输出每次 `process / drop / waiting / stop flush` 的发生时刻、buffer 时长、`speech_gate / tail_gate`、`rms / peak / active / voiced / density / silence_ratio`。
+  - 工具默认会模拟“停止录音后的 stop flush”，因此能离线看到尾段残留缓冲到底会被补转写、丢弃还是因为太短而跳过。
+  - 已新增 `tests/test_analyze_realtime_audio.py`，覆盖：
+    - chunk 达到阈值时的 `process` 事件；
+    - 强语音尾段的 `stop_flush_pending_audio`；
+    - 弱语音尾段的 `stop_flush_drop_weak_audio`。
+  - 已修正 gain 显示精度，避免 `0.015` 这类阈值附近样本被误显示成 `0.01`。
+- 当前效果判断：
+  - 现在对 `41.wav` 做 gain sweep 时，已经能直接看出第几秒开始从正常 `tail_silence_detected` 转向 `drop_brief_tail_speech / drop_weak_background_after_tail_silence`。
+  - 这轮主要提升的是“为什么被放行 / 为什么被丢弃”的定位速度，还不是最终阈值收敛本身。
+- 当前还未完成的点：
+  - 仍缺少真实“旁边人小声插话”的弱背景样本；下一轮最关键的仍是拿真实录音配合新时间线输出做进一步校准。

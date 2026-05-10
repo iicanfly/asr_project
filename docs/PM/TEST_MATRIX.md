@@ -39,7 +39,7 @@
 ### 自动化基础检查
 - 每次改动 `services/asr_service.py` 或实时切片 / 过滤规则后，至少执行：
   - `python -m unittest discover -s .\tests -p "test_*.py"`
-  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py`
 - 每次批量修改中文文档后，至少执行：
   - `python tools/check_doc_corruption.py`
 
@@ -127,6 +127,19 @@
   - 按前端真实推流节奏离线回放 wav，快速观察当前门槛下的 `process/drop/waiting` 与 gate reason 命中情况。
 - 当前已知：
   - 本地 `41.wav / 70.wav / 97.wav` 当前都属于 `strong_signal` 样本，只能验证强主语音链路，暂时不能替代弱背景样本回归。
+
+### 2026-05-10 / 离线时间线回放补充
+- 工具：
+  - `python tools/analyze_realtime_audio.py --timeline --timeline-limit 12 -- <wav>`
+  - `python tools/analyze_realtime_audio.py --timeline --timeline-include-waiting --timeline-limit 0 -- <wav>`
+- 用途：
+  - 精确观察每次 `process / drop / waiting / stop flush` 发生在第几秒、对应 buffer 多长、命中了哪条 `speech_gate / tail_gate`。
+  - 明早拿真实弱背景样本时，优先用这组输出定位“哪一段被误放行、哪一段被误丢弃”，减少盲调阈值。
+- 自动化补充检查：
+  - `tests/test_analyze_realtime_audio.py` 应覆盖：
+    - chunk 到达阈值时的 `process` 事件记录；
+    - 强语音尾段的 `stop_flush_pending_audio`；
+    - 弱语音尾段的 `stop_flush_drop_weak_audio`。
 
 ### 2026-05-10 / gain sweep 补充
 - 工具：
