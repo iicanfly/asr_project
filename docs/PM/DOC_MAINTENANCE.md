@@ -70,7 +70,17 @@
   - `AGENTS.md`
   - `docs/PM/CODEX_PLAYBOOK.md`
   - `docs/PM/DOC_MAINTENANCE.md`
+- 如果需要先判断“当前任务接下来该去读哪份专项文档”，默认再读取：
+  - `docs/PM/DOC_ROUTING.md`
 - 如果当前任务属于“实时转写调试 / 联调 / 口测回归 / 回写异常 / 前后端时延排查”，还应默认先读取：
   - `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
 - 完成任务前，默认做一次“文档是否需要同步更新”的检查。
 - 如果需要更新文档，应把这件事视为任务的一部分，而不是额外可选步骤。
+
+## 路由文档的维护要求
+- 如果新增了一个未来会反复使用的专项文档，除了更新对应内容文档外，还应判断是否需要同步更新：
+  - `docs/PM/DOC_ROUTING.md`
+- 如果某份专项文档已经成为某类任务的默认下钻入口，也应把它挂到：
+  - `AGENTS.md`
+  - `docs/PM/CODEX_PLAYBOOK.md`
+  - 必要时挂到 `docs/PM/SESSION_SUMMARY.md`

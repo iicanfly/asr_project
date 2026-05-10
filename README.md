@@ -129,6 +129,7 @@ USE_INTRANET=False
 - [AGENTS.md](./AGENTS.md)：仓库级行为准则，约束 Git、双环境、文档维护、调试方式等默认行为。
 - [docs/PM/CODEX_PLAYBOOK.md](./docs/PM/CODEX_PLAYBOOK.md)：Codex 在本项目中的长期协作手册，说明任务理解、插件/技能使用和文档维护总原则。
 - [docs/PM/DOC_MAINTENANCE.md](./docs/PM/DOC_MAINTENANCE.md)：项目管理文档的维护规则，说明什么时候必须更新哪些文档。
+- [docs/PM/DOC_ROUTING.md](./docs/PM/DOC_ROUTING.md)：文档路由总表，说明“当前是什么任务 -> 下一步该去读哪些专项文档”。
 
 ### 再看当前项目状态
 
@@ -194,6 +195,7 @@ USE_INTRANET=False
 - [docs/PM/API_FLOW.md](./docs/PM/API_FLOW.md)：核心数据流说明。
 - [docs/PM/KNOWN_ISSUES.md](./docs/PM/KNOWN_ISSUES.md)：当前已知问题与风险。
 - [docs/PM/REALTIME_DEBUG_PLAYBOOK.md](./docs/PM/REALTIME_DEBUG_PLAYBOOK.md)：实时转写专项调试手册。
+- [docs/PM/DOC_ROUTING.md](./docs/PM/DOC_ROUTING.md)：任务类型到文档阅读顺序的总路由表。
 - [docs/PM/REALTIME_ASR_CURRENT_IMPLEMENTATION.md](./docs/PM/REALTIME_ASR_CURRENT_IMPLEMENTATION.md)：实时转写当前实现说明。
 - [docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_PLAN.md](./docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_PLAN.md)：实时转写简化重构方案。
 - [docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_CHECKLIST.md](./docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_CHECKLIST.md)：实时转写简化重构实施清单。
