@@ -1,5 +1,14 @@
 # AGENTS.md
 
+## PowerShell 中文写入保护规则
+- 不要通过 `functions.shell_command` 里的 PowerShell heredoc、`echo`、`Set-Content`、`Out-File` 等链路直接写入中文文档内容。
+- 原因：这条链路已经在本项目里多次把中文写坏成 `?` 或乱码，属于已验证风险，不得再次使用同类方式试错。
+- 只要要修改中文 `.md` / `.txt` / `.json` / 配置说明类文本，默认优先使用：
+  - `apply_patch`
+  - 或者明确以 UTF-8 安全方式写文件的程序化修改
+- 如果只是读取中文文档，也要对终端显示乱码保持警惕：终端输出乱码不等于文件一定损坏，但只要发生过写入，就必须用 `python tools/check_doc_corruption.py` 复检。
+- 以后凡是涉及“中文文档新增 / 追加 / 批量改写”，先检查自己是否正走在 PowerShell 中文写入链路上；如果是，立即切换到更安全的写法。
+
 ## 文档损坏保护规则
 - 只要本轮任务修改了中文文档，默认在提交前运行：
   - `python tools/check_doc_corruption.py`

@@ -850,3 +850,11 @@
 - 改动：补充 `tests/test_analyze_realtime_audio.py`，覆盖 `pcm` 输入路径
 - 新增：`docs/PM/REALTIME_AUDIO_SAMPLE_MANIFEST.md`，沉淀本地样本来源、估算时长和推荐命令
 - 验证：`python -m unittest tests.test_analyze_realtime_audio` 通过；真实样本 `stream_recording_20260510_183243.pcm` 可直接跑出时间线
+
+## 2026-05-10 / 本轮：固化 PowerShell 中文写入禁令
+- 背景：此前已多次出现通过 PowerShell 命令链路写中文文档，导致内容变成 `?` 或乱码的问题。
+- 改动：把这条教训正式写入长期记忆文件：
+  - `AGENTS.md`
+  - `docs/PM/CODEX_PLAYBOOK.md`
+- 新默认规则：后续修改中文文档时，优先使用 `apply_patch`，避免再走 PowerShell 直接写中文的高风险路径。
+- 验证：`python tools/check_doc_corruption.py` 通过。

@@ -495,3 +495,11 @@
 - 当前已验证命令：
   - `python tools/analyze_realtime_audio.py --input-format pcm --timeline --timeline-limit 5 temp_audio\stream_recording_20260510_183243.pcm`
   - 命令可正常输出 `process/drop/waiting/stop_flush` 时间线
+
+## 2026-05-10 / PowerShell 中文写入教训已固化
+- 已把“不要通过 PowerShell 命令链路直接写中文文档”的教训正式写入长期记忆文件。
+- 后续默认优先使用 `apply_patch` 或明确的 UTF-8 安全程序化写入方式修改中文文档。
+- 这条规则已同步进入：
+  - `AGENTS.md`
+  - `docs/PM/CODEX_PLAYBOOK.md`
+- 目的：避免再次把中文 Markdown 写成 `?`、乱码或不可逆污染。
