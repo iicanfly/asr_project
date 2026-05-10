@@ -644,10 +644,35 @@ function rememberResultId(resultId) {
             return true;
         }
 
-        function replaceTranscriptEntry(data, text, timeStr) {
-            if (!data.replace_target_id) return false;
+        function findSegmentReplacementTarget(segmentId) {
+            if (!segmentId) return null;
+            for (let index = transcriptData.length - 1; index >= 0; index -= 1) {
+                const item = transcriptData[index];
+                if (item.segmentId && item.segmentId === segmentId) {
+                    return item;
+                }
+            }
+            return null;
+        }
 
-            const target = transcriptData.find(item => item.serverResultId === data.replace_target_id);
+        function replaceTranscriptEntry(data, text, timeStr) {
+            let target = null;
+
+            if (data.replace_target_id) {
+                target = transcriptData.find(item => item.serverResultId === data.replace_target_id) || null;
+            }
+
+            if (!target && data.result_type === 'segment_rewrite' && data.segment_id) {
+                target = findSegmentReplacementTarget(data.segment_id);
+                if (target) {
+                    console.warn('segment_rewrite 未命中 replace_target_id，已回退为按 segment_id 替换:', {
+                        replace_target_id: data.replace_target_id,
+                        segment_id: data.segment_id,
+                        fallback_message_id: target.id
+                    });
+                }
+            }
+
             if (!target) return false;
 
             target.content = text;

@@ -907,3 +907,31 @@
 - 验证：
   - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
   - `python -m py_compile .\main.py .\services\asr_service.py .\tools\analyze_realtime_audio.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py`
+
+### 2026-05-10 / Commit 待提交
+- 主题：
+  - 修补实时转写里的两处高频痛点：独立语气词漏网，以及段级回写偶发未替换。
+- 修改内容：
+  - 在 `services/asr_service.py` 的低信息片段集合中补充独立片段 `"是"`，用于只删除单独成段的“是”，不改动正常句内“是”。
+  - 在 `tests/test_asr_service.py` 新增回归用例，验证：
+    - `“嗯。是。重要约束。” -> “重要约束”`
+    - `“会议目的是明确范围”` 保持不变。
+  - 在 `static/js/app.js` 中增强 `segment_rewrite` 的前端替换逻辑：
+    - 先按 `replace_target_id` 精确替换；
+    - 若未命中，再回退为按同一 `segment_id` 的最后一条消息进行替换；
+    - 追加前端告警日志，便于继续观察是否存在 target 丢失。
+- 目的：
+  - 继续严格执行“只删单个语气词片段，不整句误杀”的用户约束。
+  - 降低后端已触发回写、但前端仍显示碎片化旧文本的概率。
+- 验证方式：
+  - `python -m unittest tests.test_asr_service`
+  - `python -m py_compile main.py services/asr_service.py tools/analyze_realtime_audio.py tests/test_asr_service.py`
+- 当前结果：
+  - Python 侧过滤回归已通过。
+  - 前端回写链路已补上 `segment_id` 兜底替换，便于下一轮直接用真实录音验证“是否还会碎而不回写”。
+- 用户反馈：
+  - 最新真实录音中仍看到“嗯 / 是 / Thank you”等残留语气词。
+  - 用户明确指出当前前端展示仍然过碎，怀疑回写失败。
+- 后续动作：
+  - 先让用户用真实录音回归这版；
+  - 若仍碎，再继续收紧 `segment_rewrite` 的触发节奏，而不是先盲目继续堆复杂逻辑。

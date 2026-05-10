@@ -26,6 +26,7 @@ DEFAULT_LOW_INFORMATION_SEGMENTS = (
     "哈",
     "唉",
     "嘘",
+    "是",
     "yes",
     "yeah",
     "ok",

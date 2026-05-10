@@ -384,6 +384,16 @@ class FilterResultTests(unittest.TestCase):
             "对是的吧那啥语音转写",
         )
 
+    def test_strips_standalone_shi_segment_but_keeps_sentence_internal_shi(self):
+        self.assertEqual(
+            refine_asr_result_text("嗯。是。重要约束。"),
+            "重要约束",
+        )
+        self.assertEqual(
+            refine_asr_result_text("会议目的是明确范围"),
+            "会议目的是明确范围",
+        )
+
     def test_keeps_non_filler_words_unchanged_when_removing_fillers(self):
         self.assertEqual(
             refine_asr_result_text(
