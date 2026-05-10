@@ -126,31 +126,31 @@ USE_INTRANET=False
 
 ### 先看协作规则
 
-- `AGENTS.md`
-- `docs/PM/CODEX_PLAYBOOK.md`
-- `docs/PM/DOC_MAINTENANCE.md`
+- [AGENTS.md](./AGENTS.md)：仓库级行为准则，约束 Git、双环境、文档维护、调试方式等默认行为。
+- [docs/PM/CODEX_PLAYBOOK.md](./docs/PM/CODEX_PLAYBOOK.md)：Codex 在本项目中的长期协作手册，说明任务理解、插件/技能使用和文档维护总原则。
+- [docs/PM/DOC_MAINTENANCE.md](./docs/PM/DOC_MAINTENANCE.md)：项目管理文档的维护规则，说明什么时候必须更新哪些文档。
 
 ### 再看当前项目状态
 
-- `docs/PM/BACKLOG.md`
-- `docs/PM/ENV_MATRIX.md`
-- `docs/PM/TEST_MATRIX.md`
-- `docs/PM/SESSION_SUMMARY.md`
-- `docs/PM/CHANGE_JOURNAL.md`
-- `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
+- [docs/PM/BACKLOG.md](./docs/PM/BACKLOG.md)：当前待办事项与优先级。
+- [docs/PM/ENV_MATRIX.md](./docs/PM/ENV_MATRIX.md)：内网 / 外网差异总表。
+- [docs/PM/TEST_MATRIX.md](./docs/PM/TEST_MATRIX.md)：当前必须回归的测试重点。
+- [docs/PM/SESSION_SUMMARY.md](./docs/PM/SESSION_SUMMARY.md)：当前阶段结论、临时决策、阻塞项和下一步方向。
+- [docs/PM/CHANGE_JOURNAL.md](./docs/PM/CHANGE_JOURNAL.md)：按轮次记录改动、验证结果、用户反馈和后续动作。
+- [docs/PM/REALTIME_DEBUG_PLAYBOOK.md](./docs/PM/REALTIME_DEBUG_PLAYBOOK.md)：实时转写专项调试手册，包含调试方法、清单、命令和故障字典。
 
 ### 最后看系统与代码结构
 
-- `docs/PM/SYSTEM_OVERVIEW.md`
-- `docs/PM/MODULE_INDEX.md`
-- `docs/PM/FUNCTION_CONTRACTS.md`
-- `docs/PM/CONFIG_MAP.md`
-- `docs/PM/API_FLOW.md`
-- `docs/PM/KNOWN_ISSUES.md`
+- [docs/PM/SYSTEM_OVERVIEW.md](./docs/PM/SYSTEM_OVERVIEW.md)：系统整体结构与主链路说明。
+- [docs/PM/MODULE_INDEX.md](./docs/PM/MODULE_INDEX.md)：主要模块 / 文件索引，方便快速定位代码。
+- [docs/PM/FUNCTION_CONTRACTS.md](./docs/PM/FUNCTION_CONTRACTS.md)：关键函数的输入、输出、副作用与上下游关系。
+- [docs/PM/CONFIG_MAP.md](./docs/PM/CONFIG_MAP.md)：配置项含义、作用范围和代码落点。
+- [docs/PM/API_FLOW.md](./docs/PM/API_FLOW.md)：实时转写、上传转写、文档生成等核心数据流。
+- [docs/PM/KNOWN_ISSUES.md](./docs/PM/KNOWN_ISSUES.md)：当前已知问题、结构风险与限制。
 
 如果接下来要继续做“实时转写联调 / 口测回归 / 时延排查 / 回写异常排查”，默认还应额外先看：
 
-- `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
+- [docs/PM/REALTIME_DEBUG_PLAYBOOK.md](./docs/PM/REALTIME_DEBUG_PLAYBOOK.md)
 
 这份手册当前已经包含：
 
@@ -158,6 +158,46 @@ USE_INTRANET=False
 - 标准调试清单
 - 常用命令速查表
 - 故障字典（症状 -> 排查路径 -> 命令 -> 常见修法）
+
+---
+
+## 常用 Markdown 文档导航（GitHub 可点击）
+
+下面这部分专门给 GitHub 协作者快速跳转使用。
+
+### 仓库根目录文档
+
+- [README.md](./README.md)：仓库首页说明，介绍项目目标、双环境约束、版本里程碑和文档导航。
+- [AGENTS.md](./AGENTS.md)：Codex 在本仓库中的默认行为规则，包括文档保护、版本管理和实时转写调试默认准则。
+- [CODING_PROTOCOL.md](./CODING_PROTOCOL.md)：编码与版本管理约定（如果后续继续使用该文件，可作为补充准则）。
+- [DEPLOY.md](./DEPLOY.md)：部署说明。
+- [DEPLOY_GUIDE.md](./DEPLOY_GUIDE.md)：更完整的部署步骤参考。
+- [Setup_Guide.md](./Setup_Guide.md)：环境准备与启动说明。
+- [Development_Plan.md](./Development_Plan.md)：早期开发计划文档。
+- [Technical_Design.md](./Technical_Design.md)：技术设计说明。
+- [Test_Specification.md](./Test_Specification.md)：测试规范或历史测试说明。
+- [LLM_Integration_Spec.md](./LLM_Integration_Spec.md)：LLM 接入相关说明。
+
+### `docs/PM/` 项目管理文档
+
+- [docs/PM/CODEX_PLAYBOOK.md](./docs/PM/CODEX_PLAYBOOK.md)：Codex 的长期协作手册。
+- [docs/PM/DOC_MAINTENANCE.md](./docs/PM/DOC_MAINTENANCE.md)：项目管理文档维护规则。
+- [docs/PM/BACKLOG.md](./docs/PM/BACKLOG.md)：待办清单与优先级。
+- [docs/PM/CHANGE_JOURNAL.md](./docs/PM/CHANGE_JOURNAL.md)：按轮记录改动与反馈。
+- [docs/PM/ENV_MATRIX.md](./docs/PM/ENV_MATRIX.md)：内外网差异总表。
+- [docs/PM/TEST_MATRIX.md](./docs/PM/TEST_MATRIX.md)：测试矩阵与回归重点。
+- [docs/PM/SESSION_SUMMARY.md](./docs/PM/SESSION_SUMMARY.md)：当前阶段总结与方向。
+- [docs/PM/SYSTEM_OVERVIEW.md](./docs/PM/SYSTEM_OVERVIEW.md)：系统结构总览。
+- [docs/PM/MODULE_INDEX.md](./docs/PM/MODULE_INDEX.md)：模块索引。
+- [docs/PM/FUNCTION_CONTRACTS.md](./docs/PM/FUNCTION_CONTRACTS.md)：函数契约说明。
+- [docs/PM/CONFIG_MAP.md](./docs/PM/CONFIG_MAP.md)：配置项地图。
+- [docs/PM/API_FLOW.md](./docs/PM/API_FLOW.md)：核心数据流说明。
+- [docs/PM/KNOWN_ISSUES.md](./docs/PM/KNOWN_ISSUES.md)：当前已知问题与风险。
+- [docs/PM/REALTIME_DEBUG_PLAYBOOK.md](./docs/PM/REALTIME_DEBUG_PLAYBOOK.md)：实时转写专项调试手册。
+- [docs/PM/REALTIME_ASR_CURRENT_IMPLEMENTATION.md](./docs/PM/REALTIME_ASR_CURRENT_IMPLEMENTATION.md)：实时转写当前实现说明。
+- [docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_PLAN.md](./docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_PLAN.md)：实时转写简化重构方案。
+- [docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_CHECKLIST.md](./docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_CHECKLIST.md)：实时转写简化重构实施清单。
+- [docs/PM/REALTIME_AUDIO_SAMPLE_MANIFEST.md](./docs/PM/REALTIME_AUDIO_SAMPLE_MANIFEST.md)：真实音频样本与用途说明。
 
 ---
 

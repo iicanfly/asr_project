@@ -6,6 +6,16 @@
 - 避免后续再次靠感觉乱猜，把问题越改越乱。
 - 作为 Codex 的长期记忆文档：以后只要继续做实时转写相关开发，默认应先回看这份手册。
 
+## 相关文档
+
+- [../PM/CODEX_PLAYBOOK.md](./CODEX_PLAYBOOK.md)：仓库级协作手册，说明默认协作规则与记忆文档体系。
+- [../PM/DOC_MAINTENANCE.md](./DOC_MAINTENANCE.md)：说明什么时候需要把调试结论同步回项目管理文档。
+- [../PM/SESSION_SUMMARY.md](./SESSION_SUMMARY.md)：查看当前实时转写阶段状态、临时决策与下一步重点。
+- [../PM/TEST_MATRIX.md](./TEST_MATRIX.md)：查看当前实时转写必须回归的测试项。
+- [../PM/CHANGE_JOURNAL.md](./CHANGE_JOURNAL.md)：查看这份调试手册是在哪些问题背景下沉淀出来的。
+- [../PM/REALTIME_ASR_CURRENT_IMPLEMENTATION.md](./REALTIME_ASR_CURRENT_IMPLEMENTATION.md)：查看实时转写当前实现逻辑。
+- [../../README.md](../../README.md)：GitHub 首页导航与主要文档入口。
+
 ---
 
 ## 核心教训
