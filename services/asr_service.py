@@ -140,7 +140,7 @@ class SegmentRewritePolicy:
     finalize_on_tail_silence_min_seconds: float = 4.0
     finalize_on_tail_silence_min_chars: int = 14
     sentence_boundary_min_chars: int = 6
-    max_segment_seconds: float = 18.0
+    max_segment_seconds: float = 24.0
 
 
 @dataclass(frozen=True)

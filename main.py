@@ -434,7 +434,11 @@ def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision,
         if refined_segment_text and not should_filter_asr_result(refined_segment_text):
             display_segment_text = format_asr_display_text(
                 segment_text_result,
-                ensure_sentence_end=should_finalize_segment,
+                ensure_sentence_end=(
+                    should_finalize_segment
+                    and rewrite_reason != "segment_max_duration_finalize"
+                    and "segment_max_duration_finalize" not in rewrite_reason
+                ),
             ) or refined_segment_text
             if not is_effective_text_update(active_segment.get('latest_display_text', ''), refined_segment_text):
                 active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']

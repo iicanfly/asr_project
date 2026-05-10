@@ -276,6 +276,7 @@ class AudioFeatureTests(unittest.TestCase):
         self.assertEqual(simplified_policy.min_audio_seconds, 0.6)
         self.assertEqual(simplified_policy.max_audio_seconds, 12.0)
         self.assertEqual(simplified_policy.min_tail_chunk_seconds, 2.0)
+        self.assertEqual(SegmentRewritePolicy().max_segment_seconds, 24.0)
         self.assertEqual(legacy_policy.chunk_seconds, 10.0)
         self.assertEqual(legacy_policy.min_audio_seconds, 1.0)
         self.assertEqual(legacy_policy.max_audio_seconds, 30.0)
