@@ -162,6 +162,8 @@ class RealtimeAudioAnalyzerTests(unittest.TestCase):
         self.assertEqual(payload["scenario"]["mode"], "pcm")
         self.assertEqual(payload["process_count"], 1)
         self.assertEqual(payload["timeline_events"][0]["source"], "chunk")
+        self.assertIn("max_active_run_seconds", payload["timeline_events"][0])
+        self.assertIn("max_voiced_run_seconds", payload["timeline_events"][0])
 
     def test_write_json_results_writes_utf8_json_file(self):
         policy = RealtimeChunkPolicy(chunk_seconds=1.0, max_audio_seconds=5.0)

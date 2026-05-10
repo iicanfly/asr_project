@@ -600,3 +600,25 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 明早优先对照误触发片段的 `voiced_run_s`，判断这轮规则是否真正命中目标场景。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第二十五轮：离线 run 指标口径对齐。
+- 修改内容：
+  - `tools/analyze_realtime_audio.py` 的时间线输出、终端格式化结果与 JSON 导出新增：
+    - `max_active_run_seconds`
+    - `max_voiced_run_seconds`
+  - `tests/test_analyze_realtime_audio.py` 新增对这两个结构化字段的校验。
+- 目的：
+  - 让离线分析工具和线上实时日志使用同一套连续时长指标，避免明早调参时出现“线上看一套、离线看另一套”的口径偏差。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/analyze_realtime_audio.py --timeline --timeline-limit 2 --clip-start-seconds 0.0 --clip-duration-seconds 2.2 --gains 1.0 --mix-background .\70.wav --mix-background-start-seconds 1.5 --mix-background-duration-seconds 1.0 --mix-background-gains 0.06 --mix-background-offset-seconds 0.2 --mix-tail-silence-seconds 0.5 --json-output temp_audio\\analysis_scene_matrix_runs.json -- 41.wav` 通过。
+  - `python tools/check_doc_corruption.py` 待本轮提交前执行。
+- 当前结果：
+  - 离线分析结果现在已经能直接输出 `active_run_s / voiced_run_s` 对应值，可和线上日志逐项对照。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 明早优先对一段真实误触发片段同时看线上日志与离线 JSON，确认 run 指标是否同方向变化。

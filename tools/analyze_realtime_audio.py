@@ -37,6 +37,8 @@ class TimelineEvent:
     silence_ratio: float
     active_seconds: float
     voiced_seconds: float
+    max_active_run_seconds: float
+    max_voiced_run_seconds: float
     voiced_density: float
 
 
@@ -212,6 +214,8 @@ def build_timeline_event(
         silence_ratio=(features.silence_ratio if features else 0.0),
         active_seconds=(features.active_seconds if features else 0.0),
         voiced_seconds=(features.voiced_seconds if features else 0.0),
+        max_active_run_seconds=(features.max_active_run_seconds if features else 0.0),
+        max_voiced_run_seconds=(features.max_voiced_run_seconds if features else 0.0),
         voiced_density=(features.voiced_density if features else 0.0),
     )
 
@@ -449,6 +453,8 @@ def timeline_event_to_dict(event: TimelineEvent) -> dict[str, Any]:
         "silence_ratio": event.silence_ratio,
         "active_seconds": event.active_seconds,
         "voiced_seconds": event.voiced_seconds,
+        "max_active_run_seconds": event.max_active_run_seconds,
+        "max_voiced_run_seconds": event.max_voiced_run_seconds,
         "voiced_density": event.voiced_density,
     }
 
@@ -496,6 +502,8 @@ def format_timeline_event(event: TimelineEvent) -> str:
         f"rms={event.rms:.4f} peak={event.peak} "
         f"active={event.active_ratio:.2f}/{event.active_seconds:.2f}s "
         f"voiced={event.voiced_ratio:.2f}/{event.voiced_seconds:.2f}s "
+        f"active_run={event.max_active_run_seconds:.2f}s "
+        f"voiced_run={event.max_voiced_run_seconds:.2f}s "
         f"density={event.voiced_density:.2f} "
         f"silence_ratio={event.silence_ratio:.2f}"
     )
