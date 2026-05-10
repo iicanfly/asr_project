@@ -10,6 +10,7 @@ from services.asr_service import (
     is_effective_text_update,
     looks_like_sentence_boundary,
     RealtimeChunkPolicy,
+    retain_realtime_buffer,
     SegmentRewritePolicy,
     decide_segment_rewrite,
     decide_chunk_processing,
@@ -71,8 +72,11 @@ class ChunkDecisionTests(unittest.TestCase):
         brief_speech = pcm_frames(([320] * 6) + ([0] * 64))
         decision = decide_chunk_processing(brief_speech, policy)
         self.assertFalse(decision.should_process)
-        self.assertTrue(decision.drop_buffer)
-        self.assertEqual(decision.reason, "drop_brief_tail_speech")
+        self.assertFalse(decision.drop_buffer)
+        self.assertEqual(decision.reason, "retain_brief_tail_speech")
+        retained = retain_realtime_buffer(brief_speech, decision, policy)
+        self.assertLess(len(retained), len(brief_speech))
+        self.assertGreater(len(retained), 0)
 
     def test_weak_background_audio_is_dropped_at_chunk_boundary(self):
         policy = RealtimeChunkPolicy(chunk_seconds=1.0, max_audio_seconds=30.0)
@@ -103,6 +107,13 @@ class ChunkDecisionTests(unittest.TestCase):
         decision = decide_stop_flush(tail_audio, policy)
         self.assertFalse(decision.should_process)
         self.assertEqual(decision.reason, "stop_flush_below_min_duration")
+
+    def test_stop_flush_keeps_short_voiced_tail(self):
+        policy = RealtimeChunkPolicy(stop_flush_min_seconds=0.35)
+        short_tail_audio = pcm_frames(([320] * 4) + ([0] * 24), frame_size=256)
+        decision = decide_stop_flush(short_tail_audio, policy)
+        self.assertTrue(decision.should_process)
+        self.assertEqual(decision.reason, "stop_flush_short_voiced_tail")
 
 
 class RealtimePolicyOverrideTests(unittest.TestCase):
@@ -158,6 +169,17 @@ class AudioFeatureTests(unittest.TestCase):
         self.assertFalse(decision.should_process)
         self.assertTrue(decision.drop_buffer)
         self.assertEqual(decision.reason, "drop_weak_audio_at_chunk_duration")
+
+    def test_chunk_boundary_retains_uncertain_short_speech(self):
+        policy = RealtimeChunkPolicy(chunk_seconds=1.0, uncertain_retain_seconds=0.5)
+        uncertain_audio = pcm_frames(([320] * 4) + ([0] * 60))
+        decision = decide_chunk_processing(uncertain_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertFalse(decision.drop_buffer)
+        self.assertEqual(decision.reason, "retain_uncertain_audio_at_chunk_duration")
+        retained = retain_realtime_buffer(uncertain_audio, decision, policy)
+        self.assertLess(len(retained), len(uncertain_audio))
+        self.assertGreater(len(retained), 0)
 
     def test_sustained_soft_speech_still_counts_as_usable(self):
         policy = RealtimeChunkPolicy()

@@ -62,6 +62,8 @@
     - 当同一个 `result_id` 被重复投递时，前端也不应重复渲染。
 - 静音过滤 / 弱语音专项观察：
   - 后端日志里应重点看 `Dropping realtime buffer` 与 `Processing realtime chunk` 两类日志。
+  - 新增同时观察 `Retaining realtime buffer`：
+    - 当系统认为“这段现在还不够确认，但可能含有短语音”时，应优先看到 retain，而不是立刻 process 或直接 clear。
   - 观察 `rms / peak / active / voiced / active_s / voiced_s / active_run_s / voiced_run_s / silence` 指标与实际听感是否一致。
   - 如果旁边人的小声说话明显减少触发，同时主说话人的弱音没有被大量漏掉，说明第一轮阈值方向正确。
 - 语气词过滤专项观察：

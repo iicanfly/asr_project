@@ -25,6 +25,7 @@ from services.asr_service import (
     decide_segment_rewrite,
     decide_stop_flush,
     refine_asr_result_text,
+    retain_realtime_buffer,
     should_filter_asr_result,
 )
 
@@ -504,6 +505,17 @@ def flush_pending_realtime_buffer(session, sid, *, force_finalize_segment=False)
                 features.max_voiced_run_seconds if features else 0.0,
                 features.silence_ratio if features else 0.0,
             )
+        else:
+            retained_audio = retain_realtime_buffer(pending_audio, chunk_decision, REALTIME_CHUNK_POLICY)
+            if retained_audio:
+                session['buffer'].extend(retained_audio)
+                logger.info(
+                    "Retaining stop flush buffer sid=%s reason=%s retained_duration=%.2fs original_duration=%.2fs",
+                    sid,
+                    chunk_decision.reason,
+                    len(retained_audio) / float(REALTIME_CHUNK_POLICY.sample_rate * REALTIME_CHUNK_POLICY.bytes_per_sample),
+                    len(pending_audio) / float(REALTIME_CHUNK_POLICY.sample_rate * REALTIME_CHUNK_POLICY.bytes_per_sample),
+                )
         return False
 
     process_realtime_audio_chunk(
@@ -601,6 +613,18 @@ def on_audio_stream(data):
                 features.silence_ratio if features else 0.0,
             )
             session['buffer'].clear()
+        else:
+            retained_audio = retain_realtime_buffer(bytes(session['buffer']), chunk_decision, REALTIME_CHUNK_POLICY)
+            if retained_audio != bytes(session['buffer']):
+                logger.info(
+                    "Retaining realtime buffer sid=%s reason=%s retained_duration=%.2fs original_duration=%.2fs",
+                    sid,
+                    chunk_decision.reason,
+                    len(retained_audio) / float(REALTIME_CHUNK_POLICY.sample_rate * REALTIME_CHUNK_POLICY.bytes_per_sample),
+                    len(session['buffer']) / float(REALTIME_CHUNK_POLICY.sample_rate * REALTIME_CHUNK_POLICY.bytes_per_sample),
+                )
+                session['buffer'].clear()
+                session['buffer'].extend(retained_audio)
         return
 
     audio_data = bytes(session['buffer'])

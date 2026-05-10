@@ -140,6 +140,30 @@
 
 ### 2026-05-10 / Commit 待填写
 - 主题：
+  - 为实时转写补“保守上传门控”，减少静音上传但保留短语音机会。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `has_potential_short_speech()` 与 `retain_realtime_buffer()`。
+  - 对 chunk 边界和尾静音边界处的可疑短语音，不再立刻上传或直接清空，而是先保留一小段缓冲等待后续上下文确认。
+  - 对停止录音时的短促有声尾巴，新增 `stop_flush_short_voiced_tail` 放行路径。
+  - 在 `main.py` 中接入 retain 分支日志与缓冲裁剪逻辑。
+  - 在 `tests/test_asr_service.py` 中补充对应回归测试。
+- 目的：
+  - 降低“说完一句话后，后续静音片段仍被上传到 ASR 并持续冒出嗯 / thank you”的概率。
+  - 同时避免把很短但可能重要的真实语音粗暴丢掉。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py`
+  - `python tools/check_doc_corruption.py`
+- 当前结果：
+  - 自动化层面已确认：系统会优先 retain 边界短语音，而不是立刻 process / drop。
+  - `stop flush` 对短促有声尾巴已增加保护路径。
+- 用户反馈：
+  - 用户明确要求：“静音不上传，但短有声不能被误杀；且要兼容以后多层次回写替换。”
+- 后续动作：
+  - 继续用真实录音观察 retain / process / drop 三种路径的占比与实际体验是否一致。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
   - 实时转写第三轮：小段结果到大段结果的替换回写最小闭环。
 - 修改内容：
   - 在 `services/asr_service.py` 中新增 `SegmentRewritePolicy`、`SegmentRewriteDecision` 与 `decide_segment_rewrite()`，把段级回写触发条件抽成可测试规则。
