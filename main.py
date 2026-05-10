@@ -282,6 +282,8 @@ REALTIME_CHUNK_POLICY, REALTIME_CHUNK_POLICY_OVERRIDES = load_realtime_chunk_pol
 SEGMENT_REWRITE_POLICY = SegmentRewritePolicy()
 DECIDE_REALTIME_CHUNK = decide_chunk_processing_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_chunk_processing
 DECIDE_STOP_FLUSH = decide_stop_flush_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_stop_flush
+MEDIUM_REWRITE_SECONDS = 10.0
+HIGH_REWRITE_SECONDS = 30.0
 
 
 class SessionManager:
@@ -367,9 +369,14 @@ def get_or_create_active_segment(session):
             "audio_buffer": bytearray(),
             "chunk_count": 0,
             "duration_seconds": 0.0,
+            "stage_chunk_count": 0,
+            "stage_duration_seconds": 0.0,
+            "stable_text": "",
+            "stage_display_text": "",
             "last_result_id": None,
-            "last_rewrite_chunk_count": 0,
             "latest_display_text": "",
+            "latest_result_type": None,
+            "next_medium_rewrite_seconds": MEDIUM_REWRITE_SECONDS,
         }
         session['active_segment'] = active_segment
     return active_segment
@@ -383,6 +390,7 @@ def build_realtime_result_payload(
     segment_id: str | None = None,
     replace_target_id: str | None = None,
     result_type: str = "final_chunk",
+    processing_reason: str | None = None,
 ):
     session['result_seq'] += 1
     chunk_seq = session.get('chunk_seq', 0)
@@ -396,7 +404,7 @@ def build_realtime_result_payload(
         "segment_id": segment_id or f"{session_tag}_segment_{chunk_seq}",
         "replace_target_id": replace_target_id,
         "result_type": result_type,
-        "processing_reason": chunk_decision.reason,
+        "processing_reason": processing_reason or chunk_decision.reason,
         "chunk_duration_seconds": round(chunk_decision.audio_duration_seconds, 3),
     }
 
@@ -407,82 +415,214 @@ def cleanup_realtime_session(sid):
         logger.info(f"录音结束，音频已保存至: {file_path}")
 
 
-def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision, *, force=False, force_reason=""):
-    if not active_segment or not active_segment.get('last_result_id'):
+def merge_transcript_fragments(previous_text: str, next_text: str) -> str:
+    previous = (previous_text or "").strip()
+    next_value = (next_text or "").strip()
+    if not previous:
+        return next_value
+    if not next_value:
+        return previous
+
+    previous_char = previous[-1]
+    next_char = next_value[0]
+    if previous_char.isalnum() and next_char.isalnum():
+        return f"{previous} {next_value}"
+    return f"{previous}{next_value}"
+
+
+def build_segment_display_text(active_segment, stage_text: str | None = None) -> str:
+    stable_text = active_segment.get("stable_text", "")
+    suffix_text = active_segment.get("stage_display_text", "") if stage_text is None else stage_text
+    return merge_transcript_fragments(stable_text, suffix_text)
+
+
+def should_emit_realtime_update(active_segment, display_text: str, result_type: str) -> bool:
+    latest_display_text = active_segment.get("latest_display_text", "")
+    latest_result_type = active_segment.get("latest_result_type")
+    return latest_result_type != result_type or is_effective_text_update(latest_display_text, display_text)
+
+
+def emit_realtime_display_update(
+    session,
+    active_segment,
+    chunk_decision,
+    *,
+    display_text: str,
+    result_type: str,
+    processing_reason: str,
+) -> bool:
+    if not display_text:
         return False
 
-    if force:
-        should_emit_rewrite = active_segment['chunk_count'] > active_segment['last_rewrite_chunk_count']
-        rewrite_reason = force_reason or "stop_recording_force_finalize"
-        should_finalize_segment = True
-    else:
-        should_emit_rewrite = False
-        should_finalize_segment = False
-        rewrite_reason = "segment_rewrite_disabled_until_stop"
-
-    if should_emit_rewrite:
-        segment_text_result = transcribe_realtime_chunk(bytes(active_segment['audio_buffer']))
-        refined_segment_text = refine_asr_result_text(segment_text_result)
-        if refined_segment_text and not should_filter_asr_result(refined_segment_text):
-            display_segment_text = format_asr_display_text(
-                segment_text_result,
-                ensure_sentence_end=(
-                    should_finalize_segment
-                    and rewrite_reason != "segment_max_duration_finalize"
-                    and "segment_max_duration_finalize" not in rewrite_reason
-                ),
-            ) or refined_segment_text
-            if not is_effective_text_update(active_segment.get('latest_display_text', ''), refined_segment_text):
-                active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
-                logger.info(
-                    "Skipping noop segment rewrite(segment=%s, reason=%s, chunks=%s)",
-                    active_segment['segment_id'],
-                    rewrite_reason,
-                    active_segment['chunk_count'],
-                )
-            else:
-                rewrite_payload = build_realtime_result_payload(
-                    session,
-                    display_segment_text,
-                    chunk_decision,
-                    segment_id=active_segment['segment_id'],
-                    replace_target_id=active_segment['last_result_id'],
-                    result_type="segment_rewrite",
-                )
-                append_realtime_debug_trace("emit_asr_result", rewrite_payload)
-                emit("asr_result", rewrite_payload)
-                active_segment['last_result_id'] = rewrite_payload["result_id"]
-                logger.info(
-                    "ASR 段级回写成功(segment=%s, reason=%s, chunks=%s, duration=%.2fs, text=%s)",
-                    active_segment['segment_id'],
-                    rewrite_reason,
-                    active_segment['chunk_count'],
-                    active_segment['duration_seconds'],
-                    display_segment_text[:50],
-                )
-            active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
-            active_segment['latest_display_text'] = display_segment_text
-        elif segment_text_result:
-            logger.info(
-                "ASR 段级回写结果被过滤(segment=%s, reason=%s, 原始=%s, 清洗后=%s)",
-                active_segment['segment_id'],
-                rewrite_reason,
-                segment_text_result[:50],
-                refined_segment_text[:50] if refined_segment_text else "",
-            )
-
-    if should_finalize_segment:
+    if not should_emit_realtime_update(active_segment, display_text, result_type):
         logger.info(
-            "Finalizing realtime segment sid=%s segment=%s reason=%s chunks=%s duration=%.2fs",
-            sid,
+            "Skipping noop realtime update(segment=%s, type=%s, reason=%s)",
             active_segment['segment_id'],
-            rewrite_reason,
+            result_type,
+            processing_reason,
+        )
+        return False
+
+    realtime_payload = build_realtime_result_payload(
+        session,
+        display_text,
+        chunk_decision,
+        segment_id=active_segment['segment_id'],
+        replace_target_id=active_segment.get('last_result_id'),
+        result_type=result_type,
+        processing_reason=processing_reason,
+    )
+    append_realtime_debug_trace("emit_asr_result", realtime_payload)
+    emit("asr_result", realtime_payload)
+    active_segment['last_result_id'] = realtime_payload["result_id"]
+    active_segment['latest_display_text'] = display_text
+    active_segment['latest_result_type'] = result_type
+    return True
+
+
+def reset_active_stage(active_segment) -> None:
+    active_segment['audio_buffer'] = bytearray()
+    active_segment['stage_chunk_count'] = 0
+    active_segment['stage_duration_seconds'] = 0.0
+    active_segment['stage_display_text'] = ""
+    active_segment['next_medium_rewrite_seconds'] = MEDIUM_REWRITE_SECONDS
+
+
+def emit_stage_rewrite(
+    session,
+    sid,
+    active_segment,
+    chunk_decision,
+    *,
+    result_type: str,
+    processing_reason: str,
+    finalize_stage: bool = False,
+    ensure_sentence_end: bool = False,
+) -> bool:
+    stage_audio = bytes(active_segment.get('audio_buffer', b""))
+    if not stage_audio and not finalize_stage:
+        return False
+
+    stage_text = active_segment.get('stage_display_text', '')
+    raw_text_result = ""
+    refined_text_result = ""
+
+    if stage_audio:
+        raw_text_result = transcribe_realtime_chunk(stage_audio)
+        refined_text_result = refine_asr_result_text(raw_text_result)
+
+    if refined_text_result and not should_filter_asr_result(refined_text_result):
+        stage_text = format_asr_display_text(
+            raw_text_result,
+            ensure_sentence_end=ensure_sentence_end,
+        ) or refined_text_result
+    elif raw_text_result:
+        logger.info(
+            "ASR rewrite filtered(segment=%s, type=%s, reason=%s, raw=%s, refined=%s)",
+            active_segment['segment_id'],
+            result_type,
+            processing_reason,
+            raw_text_result[:50],
+            refined_text_result[:50] if refined_text_result else "",
+        )
+
+    if finalize_stage:
+        committed_text = build_segment_display_text(active_segment, stage_text)
+        emitted = emit_realtime_display_update(
+            session,
+            active_segment,
+            chunk_decision,
+            display_text=committed_text,
+            result_type=result_type,
+            processing_reason=processing_reason,
+        )
+        active_segment['stable_text'] = committed_text
+        reset_active_stage(active_segment)
+        logger.info(
+            "ASR high rewrite committed(segment=%s, reason=%s, total_chunks=%s, total_duration=%.2fs, text=%s)",
+            active_segment['segment_id'],
+            processing_reason,
             active_segment['chunk_count'],
             active_segment['duration_seconds'],
+            committed_text[:80],
         )
-        session['active_segment'] = None
+        return emitted
 
-    return should_emit_rewrite
+    if not stage_text:
+        return False
+
+    combined_display_text = build_segment_display_text(active_segment, stage_text)
+    emitted = emit_realtime_display_update(
+        session,
+        active_segment,
+        chunk_decision,
+        display_text=combined_display_text,
+        result_type=result_type,
+        processing_reason=processing_reason,
+    )
+    active_segment['stage_display_text'] = stage_text
+    logger.info(
+        "ASR rewrite emitted(segment=%s, type=%s, reason=%s, stage_duration=%.2fs, text=%s)",
+        active_segment['segment_id'],
+        result_type,
+        processing_reason,
+        active_segment['stage_duration_seconds'],
+        combined_display_text[:80],
+    )
+    return emitted
+
+
+def emit_tiered_rewrite_if_needed(session, sid, active_segment, chunk_decision, *, finalize_segment=False):
+    if not active_segment:
+        return False
+
+    rewrite_emitted = False
+
+    while active_segment.get('stage_duration_seconds', 0.0) >= HIGH_REWRITE_SECONDS:
+        rewrite_emitted = emit_stage_rewrite(
+            session,
+            sid,
+            active_segment,
+            chunk_decision,
+            result_type="high_rewrite",
+            processing_reason="high_rewrite_window_30s",
+            finalize_stage=True,
+            ensure_sentence_end=False,
+        ) or rewrite_emitted
+
+    while (
+        active_segment.get('stage_duration_seconds', 0.0) >= active_segment.get('next_medium_rewrite_seconds', MEDIUM_REWRITE_SECONDS)
+        and active_segment.get('stage_duration_seconds', 0.0) < HIGH_REWRITE_SECONDS
+    ):
+        threshold_seconds = active_segment.get('next_medium_rewrite_seconds', MEDIUM_REWRITE_SECONDS)
+        rewrite_emitted = emit_stage_rewrite(
+            session,
+            sid,
+            active_segment,
+            chunk_decision,
+            result_type="medium_rewrite",
+            processing_reason=f"medium_rewrite_window_{int(threshold_seconds)}s",
+            finalize_stage=False,
+            ensure_sentence_end=False,
+        ) or rewrite_emitted
+        active_segment['next_medium_rewrite_seconds'] = threshold_seconds + MEDIUM_REWRITE_SECONDS
+
+    if finalize_segment and (
+        active_segment.get('stage_duration_seconds', 0.0) > 0
+        or active_segment.get('stable_text')
+    ):
+        rewrite_emitted = emit_stage_rewrite(
+            session,
+            sid,
+            active_segment,
+            chunk_decision,
+            result_type="high_rewrite",
+            processing_reason="stop_recording_finalize_segment",
+            finalize_stage=True,
+            ensure_sentence_end=True,
+        ) or rewrite_emitted
+
+    return rewrite_emitted
 
 
 def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision, *, finalize_after_processing=False):
@@ -493,6 +633,8 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
     active_segment['audio_buffer'].extend(audio_data)
     active_segment['chunk_count'] += 1
     active_segment['duration_seconds'] += chunk_decision.audio_duration_seconds
+    active_segment['stage_chunk_count'] += 1
+    active_segment['stage_duration_seconds'] += chunk_decision.audio_duration_seconds
 
     logger.info(
         "Processing realtime chunk sid=%s chunk=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs bytes=%s rms=%.4f peak=%s active=%.2f voiced=%.2f density=%.2f active_s=%.2fs voiced_s=%.2fs active_run_s=%.2fs voiced_run_s=%.2fs silence=%.2f",
@@ -522,7 +664,12 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
 
         if refined_text_result and not is_filtered_result:
             display_text_result = format_asr_display_text(text_result) or refined_text_result
-            if not is_effective_text_update(active_segment.get('latest_display_text', ''), refined_text_result):
+            updated_stage_text = merge_transcript_fragments(
+                active_segment.get('stage_display_text', ''),
+                display_text_result,
+            )
+            combined_display_text = build_segment_display_text(active_segment, updated_stage_text)
+            if not should_emit_realtime_update(active_segment, combined_display_text, "segment_partial"):
                 logger.info(
                     "Skipping noop partial result(segment=%s, chunks=%s, text=%s)",
                     active_segment['segment_id'],
@@ -532,20 +679,23 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
             else:
                 partial_payload = build_realtime_result_payload(
                     session,
-                    display_text_result,
+                    combined_display_text,
                     chunk_decision,
                     segment_id=active_segment['segment_id'],
+                    replace_target_id=active_segment.get('last_result_id'),
                     result_type="segment_partial",
                 )
                 append_realtime_debug_trace("emit_asr_result", partial_payload)
                 emit("asr_result", partial_payload)
                 active_segment['last_result_id'] = partial_payload["result_id"]
-                active_segment['latest_display_text'] = display_text_result
+                active_segment['latest_display_text'] = combined_display_text
+                active_segment['latest_result_type'] = "segment_partial"
+                active_segment['stage_display_text'] = updated_stage_text
                 logger.info(
                     "ASR partial emitted(result_id=%s, raw=%s, refined=%s, segment=%s, chunks=%s)",
                     partial_payload["result_id"],
                     text_result[:50] if text_result else "",
-                    display_text_result[:50],
+                    combined_display_text[:50],
                     active_segment['segment_id'],
                     active_segment['chunk_count'],
                 )
@@ -586,13 +736,12 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                 session['active_segment'] = None
                 return
 
-        emit_segment_rewrite_if_needed(
+        emit_tiered_rewrite_if_needed(
             session,
             sid,
             active_segment,
             chunk_decision,
-            force=finalize_after_processing,
-            force_reason="stop_recording_finalize_segment" if finalize_after_processing else "",
+            finalize_segment=finalize_after_processing,
         )
     except Exception as e:
         logger.exception(f"ASR API call failed: {e}")
@@ -666,23 +815,21 @@ def finalize_active_segment_on_stop(session, sid):
         audio_duration_seconds=active_segment['duration_seconds'],
         trailing_silence_detected=False,
     )
-    emit_segment_rewrite_if_needed(
+    emit_tiered_rewrite_if_needed(
         session,
         sid,
         active_segment,
         stop_chunk_decision,
-        force=True,
-        force_reason="stop_recording_finalize_segment",
+        finalize_segment=True,
     )
-    if session.get('active_segment') is active_segment:
-        logger.info(
-            "Finalizing realtime segment sid=%s segment=%s reason=stop_recording_finalize_segment chunks=%s duration=%.2fs",
-            sid,
-            active_segment['segment_id'],
-            active_segment['chunk_count'],
-            active_segment['duration_seconds'],
-        )
-        session['active_segment'] = None
+    logger.info(
+        "Finalizing realtime segment sid=%s segment=%s reason=stop_recording_finalize_segment chunks=%s duration=%.2fs",
+        sid,
+        active_segment['segment_id'],
+        active_segment['chunk_count'],
+        active_segment['duration_seconds'],
+    )
+    session['active_segment'] = None
 
 
 def drain_ready_realtime_buffer(session, sid, *, max_rounds=6):

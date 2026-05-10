@@ -190,6 +190,18 @@
             word-break: break-all;
         }
 
+        .transcript-level-partial {
+            color: #b35a00;
+        }
+
+        .transcript-level-medium {
+            color: #1f4e79;
+        }
+
+        .transcript-level-high {
+            color: #111111;
+        }
+
         /* 消息编辑功能 */
         .message:hover .message-actions {
             opacity: 1;

@@ -1071,3 +1071,34 @@
 - 当前结果：
   - 用真实录音 `stream_recording_20260510_233016.pcm` 回放时，录音过程中只保留 1 个有效段；
   - stop 后才触发一次整段 rewrite，符合当前设计目标。
+## 2026-05-11 / 本轮：单段显示 + 三级回写（partial / 10s / 30s）
+- 主题：
+  - 把“录音中只在 stop 时整段回写”改成“录音中持续 partial + 10 秒中级回写 + 30 秒高级回写”，同时保持同一次录音仍然只显示一个段落。
+- 修改内容：
+  - `main.py`
+    - 新增三级回写状态：`stable_text`、`stage_display_text`、`stage_duration_seconds`、`next_medium_rewrite_seconds`
+    - partial 改为每次都带 `replace_target_id` 回写同一条消息，而不是继续堆新消息
+    - 中级回写在当前阶段累计约 10 秒、20 秒时触发，结果类型为 `medium_rewrite`
+    - 高级回写在当前阶段累计约 30 秒时触发，结果类型为 `high_rewrite`，并把当前 30 秒阶段提交进 `stable_text`，随后清空阶段音频缓冲，避免长录音越来越慢
+    - stop 时不再重跑“整段无限增长音频”，而是只对当前未提交阶段做一次 `high_rewrite` 收尾
+  - `static/js/app.js`
+    - 前端继续保持“同一个 `segment_id` 只显示一段”的模式
+    - 支持识别 `medium_rewrite / high_rewrite`，并继续沿用 `replace_target_id` 替换同一条消息
+    - 为不同层级结果增加颜色状态切换
+  - `static/css/style.css`
+    - partial：深橙色
+    - medium：深蓝色
+    - high：黑色
+- 验证方式：
+  - `conda run --no-capture-output -n asr python -m py_compile main.py tests/test_realtime_tiered_rewrite.py`
+  - `node --check static/js/app.js`
+  - `conda run --no-capture-output -n asr python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio tests.test_realtime_tiered_rewrite`
+  - 用 `socketio.test_client()` 回放真实录音 `temp_audio/stream_recording_20260511_012110.pcm`
+- 当前结果：
+  - 自动化回放已看到：`segment_partial` 21 次、`medium_rewrite` 4 次、`high_rewrite` 2 次
+  - 说明三级回写链路已经真实触发，不再是只有 stop 后才整段回写
+  - 30 秒高级回写后，旧阶段音频缓冲已被提交并清空，长录音性能路径相比上一版更可控
+- 后续动作：
+  - 优先请用户实际录一段“重要约束”再看三种颜色是否按预期切换
+  - 如果回写层级正常，再继续收紧 partial 文本拼接质量与标点细节
+

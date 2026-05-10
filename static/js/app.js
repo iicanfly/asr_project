@@ -632,7 +632,26 @@ function rememberResultId(resultId) {
             return shouldInsertTranscriptSpace(prev, next) ? `${prev} ${next}` : `${prev}${next}`;
         }
 
-        function updateMessageUI(messageId, text, time) {
+        function getTranscriptLevelClass(resultType) {
+            if (resultType === 'high_rewrite') return 'transcript-level-high';
+            if (resultType === 'medium_rewrite') return 'transcript-level-medium';
+            return 'transcript-level-partial';
+        }
+
+        function applyTranscriptLevelClass(messageDiv, resultType) {
+            if (!messageDiv) return;
+            const contentDiv = messageDiv.querySelector('.message-content');
+            if (!contentDiv) return;
+            contentDiv.classList.remove('transcript-level-partial', 'transcript-level-medium', 'transcript-level-high');
+            contentDiv.classList.add(getTranscriptLevelClass(resultType));
+            messageDiv.dataset.resultType = resultType || '';
+        }
+
+        function isRewriteResultType(resultType) {
+            return resultType === 'segment_rewrite' || resultType === 'medium_rewrite' || resultType === 'high_rewrite';
+        }
+
+        function updateMessageUI(messageId, text, time, resultType = '') {
             const messageDiv = document.querySelector(`div[data-message-id="${messageId}"]`);
             if (!messageDiv) return false;
 
@@ -641,6 +660,7 @@ function rememberResultId(resultId) {
 
             if (contentDiv) contentDiv.innerText = text;
             if (timeTag) timeTag.innerText = time;
+            applyTranscriptLevelClass(messageDiv, resultType);
             return true;
         }
 
@@ -662,10 +682,10 @@ function rememberResultId(resultId) {
                 target = transcriptData.find(item => item.serverResultId === data.replace_target_id) || null;
             }
 
-            if (!target && data.result_type === 'segment_rewrite' && data.segment_id) {
+            if (!target && isRewriteResultType(data.result_type) && data.segment_id) {
                 target = findSegmentReplacementTarget(data.segment_id);
                 if (target) {
-                    console.warn('segment_rewrite 未命中 replace_target_id，已回退为按 segment_id 替换:', {
+                    console.warn('rewrite 未命中 replace_target_id，已回退为按 segment_id 替换:', {
                         replace_target_id: data.replace_target_id,
                         segment_id: data.segment_id,
                         fallback_message_id: target.id
@@ -682,7 +702,7 @@ function rememberResultId(resultId) {
             target.resultType = data.result_type || target.resultType;
             rememberResultId(data.result_id);
 
-            updateMessageUI(target.id, text, timeStr);
+            updateMessageUI(target.id, text, timeStr, target.resultType);
             saveCache();
             document.getElementById('clear-btn').style.display = 'block';
             return true;
@@ -731,7 +751,7 @@ function handleASRResult(data) {
 
             if (shouldMerge && transcriptData.length > 0) {
                 const mergedText = mergeTranscriptText(lastEntry.content, text);
-                addMessageUI(data.speaker_id, text, timeStr, true, lastEntry.id);
+                addMessageUI(data.speaker_id, text, timeStr, true, lastEntry.id, data.result_type);
                 lastEntry.content = mergedText;
                 lastEntry.time = timeStr;
                 lastEntry.serverResultId = data.result_id || lastEntry.serverResultId;
@@ -742,7 +762,7 @@ function handleASRResult(data) {
                 // 生成唯一消息 ID
                 const messageId = ++messageIdCounter;
 
-                addMessageUI(data.speaker_id, text, timeStr, false, messageId);
+                addMessageUI(data.speaker_id, text, timeStr, false, messageId, data.result_type);
                 transcriptData.push(buildTranscriptEntry(data, messageId, text, timeStr));
                 rememberResultId(data.result_id);
             }
@@ -755,7 +775,7 @@ function handleASRResult(data) {
             document.getElementById('clear-btn').style.display = 'block';
         }
 
-function addMessageUI(speaker, text, time, merge = false, messageId = null) {
+function addMessageUI(speaker, text, time, merge = false, messageId = null, resultType = '') {
             const list = document.getElementById('transcript-list');
             const isSpeaker2 = speaker.includes('Speaker_2') || speaker.includes('2');
 
@@ -766,6 +786,7 @@ function addMessageUI(speaker, text, time, merge = false, messageId = null) {
                 contentDiv.innerText = mergeTranscriptText(contentDiv.innerText, text);
                 const timeTag = lastMsg.querySelector('.time-tag');
                 if (timeTag) timeTag.innerText = time;
+                applyTranscriptLevelClass(lastMsg, resultType);
             } else {
                 // 新建消息气泡
                 const div = document.createElement('div');
@@ -780,9 +801,10 @@ function addMessageUI(speaker, text, time, merge = false, messageId = null) {
                         <button class="message-action-btn" onclick="deleteMessage(${div.dataset.messageId})" title="删除">🗑️</button>
                     </div>
                     <span class="speaker-tag">${speaker}</span>
-                    <div class="message-content">${text}</div>
+                    <div class="message-content ${getTranscriptLevelClass(resultType)}">${text}</div>
                     <span class="time-tag">${time}</span>
                 `;
+                div.dataset.resultType = resultType || '';
                 list.appendChild(div);
             }
             list.scrollTop = list.scrollHeight;
@@ -1808,7 +1830,7 @@ function persistCacheNow() {
                             rememberMessageId(msgId);
                             d.id = msgId; // 确保数据有 ID
 
-                            addMessageUI(d.speaker, d.content, timeStr, false, msgId);
+                            addMessageUI(d.speaker, d.content, timeStr, false, msgId, d.resultType || '');
 
                             transcriptData.push(d);
                             lastSpeaker = d.speaker;

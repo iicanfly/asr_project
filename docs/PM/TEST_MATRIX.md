@@ -362,3 +362,29 @@
   - 录音过程中连续收到多个 `segment_partial`，全部落在同一个 `segment_id`
   - `segment_rewrite` 只在 stop 后出现 1 次
   - 与“单次录音只保留一段”的目标一致
+## 2026-05-11 / 三级回写专项回归补充
+### 新增必看观察点
+- 单段显示：
+  - 同一次录音过程中，无论出现 partial / medium / high，前端都只能维护同一个段落，不应新开第二段。
+- 三级回写颜色：
+  - `segment_partial`：深橙色
+  - `medium_rewrite`：深蓝色
+  - `high_rewrite`：黑色
+- 录音中回写节奏：
+  - 大约 10 秒附近应至少能看到一次 `medium_rewrite`
+  - 大约 30 秒附近应至少能看到一次 `high_rewrite`
+  - stop 后若还有未提交尾段，应再看到一次 `high_rewrite`
+- 长录音性能：
+  - 30 秒高级回写触发后，后续输出不应继续明显变慢
+  - 重点确认是否已经摆脱“只能等 stop 才整段慢慢回写”的旧问题
+
+### 本轮自动化回放基线
+- 回放文件：`temp_audio/stream_recording_20260511_012110.pcm`
+- 观测结果：
+  - `segment_partial`：21
+  - `medium_rewrite`：4
+  - `high_rewrite`：2
+- 结论：
+  - 三级回写链路已真实触发
+  - 同时满足“录音中有回写”和“stop 时仍能收尾”两类路径
+
