@@ -284,6 +284,7 @@ DECIDE_REALTIME_CHUNK = decide_chunk_processing_simple if ENABLE_SIMPLIFIED_REAL
 DECIDE_STOP_FLUSH = decide_stop_flush_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_stop_flush
 MEDIUM_REWRITE_SECONDS = 10.0
 HIGH_REWRITE_SECONDS = 30.0
+IDLE_HIGH_REWRITE_SECONDS = 10.0
 
 
 class SessionManager:
@@ -306,6 +307,8 @@ class SessionManager:
                 self._sessions[sid] = {
                     'buffer': bytearray(),
                     'last_process_time': time.time(),
+                    'last_audio_time': time.time(),
+                    'last_idle_rewrite_audio_time': 0.0,
                     'processing': False,
                     'stop_requested': False,
                     'drain_lock': threading.Lock(),
@@ -322,6 +325,10 @@ class SessionManager:
     def get(self, sid):
         with self._lock:
             return self._sessions.get(sid)
+
+    def items_snapshot(self):
+        with self._lock:
+            return list(self._sessions.items())
 
     def mark_recently_stopped(self, sid, cooldown_seconds=3.0):
         with self._lock:
@@ -422,6 +429,10 @@ def cleanup_realtime_session(sid):
         logger.info(f"录音结束，音频已保存至: {file_path}")
 
 
+def emit_realtime_result(sid, payload: dict) -> None:
+    socketio.emit("asr_result", payload, to=sid)
+
+
 def merge_transcript_fragments(previous_text: str, next_text: str) -> str:
     previous = (previous_text or "").strip()
     next_value = (next_text or "").strip()
@@ -463,6 +474,7 @@ def should_emit_realtime_update(active_segment, display_text: str, result_type: 
 
 
 def emit_realtime_display_update(
+    sid,
     session,
     active_segment,
     chunk_decision,
@@ -499,7 +511,7 @@ def emit_realtime_display_update(
         partial_text=partial_text,
     )
     append_realtime_debug_trace("emit_asr_result", realtime_payload)
-    emit("asr_result", realtime_payload)
+    emit_realtime_result(sid, realtime_payload)
     active_segment['last_result_id'] = realtime_payload["result_id"]
     active_segment['latest_display_text'] = display_text
     active_segment['latest_result_type'] = result_type
@@ -562,6 +574,7 @@ def emit_stage_rewrite(
             stable_override=committed_text,
         )
         emitted = emit_realtime_display_update(
+            sid,
             session,
             active_segment,
             chunk_decision,
@@ -594,6 +607,7 @@ def emit_stage_rewrite(
         stage_text=stage_text,
     )
     emitted = emit_realtime_display_update(
+        sid,
         session,
         active_segment,
         chunk_decision,
@@ -740,7 +754,7 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                     partial_text=partial_text,
                 )
                 append_realtime_debug_trace("emit_asr_result", partial_payload)
-                emit("asr_result", partial_payload)
+                emit_realtime_result(sid, partial_payload)
                 active_segment['last_result_id'] = partial_payload["result_id"]
                 active_segment['latest_display_text'] = combined_display_text
                 active_segment['latest_result_type'] = "segment_partial"
@@ -959,6 +973,78 @@ def try_drain_realtime_buffer(session, sid, *, max_rounds=6):
         drain_lock.release()
 
 
+def process_idle_realtime_session(session, sid, *, now: float | None = None) -> bool:
+    current_time = time.time() if now is None else now
+    last_audio_time = session.get('last_audio_time', session.get('last_process_time', current_time))
+    last_idle_rewrite_audio_time = session.get('last_idle_rewrite_audio_time', 0.0)
+
+    if session.get('stop_requested') or session.get('processing'):
+        return False
+    if last_audio_time <= 0 or last_audio_time <= last_idle_rewrite_audio_time:
+        return False
+    if (current_time - last_audio_time) < IDLE_HIGH_REWRITE_SECONDS:
+        return False
+
+    flush_pending_realtime_buffer(session, sid, force_finalize_segment=False)
+
+    active_segment = session.get('active_segment')
+    if not active_segment or not active_segment.get('stage_display_text'):
+        session['last_idle_rewrite_audio_time'] = last_audio_time
+        return False
+
+    idle_chunk_decision = ChunkDecision(
+        should_process=False,
+        reason="idle_high_rewrite_timeout",
+        audio_duration_seconds=active_segment.get('stage_duration_seconds', 0.0),
+        trailing_silence_detected=True,
+    )
+    emitted = emit_stage_rewrite(
+        session,
+        sid,
+        active_segment,
+        idle_chunk_decision,
+        result_type="high_rewrite",
+        processing_reason="idle_high_rewrite_timeout",
+        finalize_stage=True,
+        ensure_sentence_end=True,
+    )
+    session['last_idle_rewrite_audio_time'] = last_audio_time
+    logger.info(
+        "Idle high rewrite triggered sid=%s segment=%s idle_seconds=%.2f emitted=%s",
+        sid,
+        active_segment['segment_id'],
+        current_time - last_audio_time,
+        emitted,
+    )
+    return emitted
+
+
+def realtime_idle_monitor_loop():
+    while True:
+        try:
+            now = time.time()
+            for sid, session in session_mgr.items_snapshot():
+                drain_lock = session.get('drain_lock')
+                if drain_lock is not None and not drain_lock.acquire(blocking=False):
+                    continue
+                try:
+                    process_idle_realtime_session(session, sid, now=now)
+                finally:
+                    if drain_lock is not None:
+                        drain_lock.release()
+        except Exception as exc:
+            logger.exception("Realtime idle monitor loop failed: %s", exc)
+        time.sleep(1.0)
+
+
+REALTIME_IDLE_MONITOR_THREAD = threading.Thread(
+    target=realtime_idle_monitor_loop,
+    name="realtime-idle-monitor",
+    daemon=True,
+)
+REALTIME_IDLE_MONITOR_THREAD.start()
+
+
 @socketio.on("connect")
 def on_connect():
     logger.info(f"Socket.IO 客户端已连接: {request.sid}")
@@ -1007,6 +1093,7 @@ def on_audio_stream(data):
     fh.write(data)
     fh.flush()
 
+    session['last_audio_time'] = time.time()
     session['buffer'].extend(data)
 
     try_drain_realtime_buffer(session, sid)

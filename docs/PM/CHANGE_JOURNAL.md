@@ -26,6 +26,30 @@
 
 ## 变更记录
 
+### 2026-05-11 / Commit 本地当前版本
+- 主题：
+  - 为三级回写补上“静音超时自动高级回写”收尾机制。
+- 修改内容：
+  - 在 `main.py` 中新增 `IDLE_HIGH_REWRITE_SECONDS = 10.0`。
+  - 为实时 session 增加 `last_audio_time`、`last_idle_rewrite_audio_time`，用于识别“说完后静音”的状态。
+  - 新增 `process_idle_realtime_session()` 与后台 `realtime_idle_monitor_loop()`，在未点击停止录音的情况下，也能自动触发一次 `high_rewrite`。
+  - 将实时结果发射路径统一为 `socketio.emit(..., to=sid)`，确保同一会话定向推送。
+  - 补齐 `tests/test_realtime_tiered_rewrite.py`，新增“静音超时自动高级回写”自动化回归，并同步适配新的 emit 路径。
+- 目的：
+  - 解决用户口测中“说完一段话后停住不说，尾部橙色 / 蓝色文本一直不黑化”的问题。
+- 验证方式：
+  - `conda run --no-capture-output -n asr python -m py_compile main.py tests/test_realtime_tiered_rewrite.py`
+  - `conda run --no-capture-output -n asr python -m unittest tests/test_asr_service.py tests/test_analyze_realtime_audio.py tests/test_realtime_tiered_rewrite.py`
+  - `node --check static/js/app.js`
+- 当前结果：
+  - 代码层已经具备“静音约 10 秒后自动做一次高级回写收尾”的能力。
+  - 当前仍需要用户在前端实际再测一次，确认真实麦克风链路下的颜色收口与延迟表现。
+- 用户反馈：
+  - 用户明确要求：不点击停止录音，仅在静音超时后也要触发最终高级回写。
+- 后续动作：
+  - 由 Codex 重启服务；
+  - 用户刷新网页后做口测，重点看尾部蓝色 / 橙色是否能自动转黑。
+
 ### 2026-05-10 / Commit c454127
 - 主题：
   - 先整理实时转写主链路的结构与正确性，再进入质量优化。
@@ -1114,4 +1138,3 @@
   - 自动化测试通过，颜色逻辑已经从“整段染色”改为“分层染色”。
 - 后续动作：
   - 重启服务后请用户刷新网页，重点看 high 之后再来 partial 时，前面黑色部分是否仍保持黑色。
-
