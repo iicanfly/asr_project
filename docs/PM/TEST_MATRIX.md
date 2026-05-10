@@ -164,6 +164,17 @@
     - 超出原始时长时是否安全返回空片段；
     - 裁剪标签是否正确写入分析结果标题。
 
+### 2026-05-10 / 多偏移扫描与 JSON 导出补充
+- 工具：
+  - `python tools/analyze_realtime_audio.py --clip-start-seconds 0.0 --clip-duration-seconds 2.2 --mix-background 70.wav --mix-background-start-seconds 1.5 --mix-background-duration-seconds 1.0 --mix-background-gains 0.06 --mix-background-offset-seconds 0.2 0.8 1.4 --mix-tail-silence-seconds 0.5 --json-output temp_audio\\analysis_scene_matrix.json -- 41.wav`
+- 用途：
+  - 一次性扫描多组“背景插话发生时机”，比较不同 offset 下的 `process / drop / stop flush` 差异。
+  - 将结果保存成 UTF-8 JSON，方便明早对真实样本做批量比对、后续脚本化分析或留档。
+- 自动化补充检查：
+  - `tests/test_analyze_realtime_audio.py` 应覆盖：
+    - 结构化结果中的 `scenario` 与 `timeline_events` 字段；
+    - JSON 文件写出后可被正确读取。
+
 ### 2026-05-10 / gain sweep 补充
 - 工具：
   - `python tools/analyze_realtime_audio.py --gains 1.0 0.5 0.25 0.125 -- <wav>`

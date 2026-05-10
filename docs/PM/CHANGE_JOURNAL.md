@@ -553,3 +553,27 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 明早优先用真实弱背景录音片段跑相同命令，对比局部分析结果与整段分析结果是否一致。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第二十三轮：多偏移扫描与 JSON 导出。
+- 修改内容：
+  - `tools/analyze_realtime_audio.py` 新增：
+    - 多组 `--mix-background-offset-seconds` 批量扫描；
+    - `--json-output` 结构化导出。
+  - 结构化结果包含 `scenario`、统计计数、`stop_flush_event` 与全量 `timeline_events`。
+  - `tests/test_analyze_realtime_audio.py` 新增 JSON 结果与结构化字段的自动化测试。
+- 目的：
+  - 让明早的弱背景插话实验可以一次跑多组 offset，并把结果直接落盘留档，减少手工整理成本。
+  - 为后续对真实样本做批量分析和脚本化比对打基础。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/analyze_realtime_audio.py --clip-start-seconds 0.0 --clip-duration-seconds 2.2 --mix-background 70.wav --mix-background-start-seconds 1.5 --mix-background-duration-seconds 1.0 --mix-background-gains 0.06 --mix-background-offset-seconds 0.2 0.8 1.4 --mix-tail-silence-seconds 0.5 --json-output temp_audio\\analysis_scene_matrix.json -- 41.wav` 通过。
+  - `python tools/check_doc_corruption.py` 待本轮提交前执行。
+- 当前结果：
+  - 现在已经可以一次性得到多组弱背景插话时机的分析结果，并直接输出成 JSON 供后续比对。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 明早优先把真实弱背景样本按多 offset / 多增益方式导出成 JSON，再和今晚的合成场景结果对照。

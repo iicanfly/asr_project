@@ -1,5 +1,7 @@
 import importlib.util
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -146,6 +148,38 @@ class RealtimeAudioAnalyzerTests(unittest.TestCase):
         self.assertEqual(analyze_realtime_audio.describe_clip(0.0, None), "")
         self.assertEqual(analyze_realtime_audio.describe_clip(1.25, None), ", clip=1.25s:")
         self.assertEqual(analyze_realtime_audio.describe_clip(1.25, 0.5), ", clip=1.25s:+0.50s")
+
+    def test_audio_analysis_result_to_dict_keeps_scenario_and_timeline(self):
+        policy = RealtimeChunkPolicy(chunk_seconds=1.0, max_audio_seconds=5.0)
+        result = analyze_realtime_audio.analyze_pcm(
+            pcm_window(900, 16000),
+            policy,
+            packet_samples=512,
+            simulate_stop_flush=False,
+        )
+
+        payload = analyze_realtime_audio.audio_analysis_result_to_dict(result)
+        self.assertEqual(payload["scenario"]["mode"], "pcm")
+        self.assertEqual(payload["process_count"], 1)
+        self.assertEqual(payload["timeline_events"][0]["source"], "chunk")
+
+    def test_write_json_results_writes_utf8_json_file(self):
+        policy = RealtimeChunkPolicy(chunk_seconds=1.0, max_audio_seconds=5.0)
+        result = analyze_realtime_audio.analyze_pcm(
+            pcm_window(900, 16000),
+            policy,
+            packet_samples=512,
+            simulate_stop_flush=False,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "analysis.json"
+            analyze_realtime_audio.write_json_results([result], output_path)
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["label"], result.label)
+        self.assertEqual(payload[0]["scenario"]["mode"], "pcm")
 
 
 if __name__ == "__main__":

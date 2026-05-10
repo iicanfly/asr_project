@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import audioop
+import json
 import sys
 import wave
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from typing import Iterable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +45,7 @@ class AudioAnalysisResult:
     label: str
     path: Path
     gain: float
+    scenario: dict[str, Any]
     duration_seconds: float
     process_count: int
     drop_count: int
@@ -287,6 +290,11 @@ def analyze_pcm(
         label=f"pcm @ gain={format_gain(gain)}",
         path=Path("<pcm>"),
         gain=gain,
+        scenario={
+            "mode": "pcm",
+            "gain": gain,
+            "simulate_stop_flush": simulate_stop_flush,
+        },
         duration_seconds=len(pcm) / bytes_per_second,
         process_count=process_count,
         drop_count=drop_count,
@@ -331,6 +339,14 @@ def analyze_file(
         f"{describe_clip(clip_start_seconds, clip_duration_seconds)}"
     )
     result.path = path
+    result.scenario = {
+        "mode": "single",
+        "path": str(path),
+        "gain": gain,
+        "clip_start_seconds": clip_start_seconds,
+        "clip_duration_seconds": clip_duration_seconds,
+        "simulate_stop_flush": simulate_stop_flush,
+    }
     return result
 
 
@@ -391,6 +407,20 @@ def analyze_mixed_files(
         f"offset={background_offset_seconds:.2f}s, tail={tail_silence_seconds:.2f}s)"
     )
     result.path = foreground_path
+    result.scenario = {
+        "mode": "mixed",
+        "foreground_path": str(foreground_path),
+        "foreground_gain": foreground_gain,
+        "foreground_clip_start_seconds": foreground_clip_start_seconds,
+        "foreground_clip_duration_seconds": foreground_clip_duration_seconds,
+        "background_path": str(background_path),
+        "background_gain": background_gain,
+        "background_clip_start_seconds": background_clip_start_seconds,
+        "background_clip_duration_seconds": background_clip_duration_seconds,
+        "background_offset_seconds": background_offset_seconds,
+        "tail_silence_seconds": tail_silence_seconds,
+        "simulate_stop_flush": simulate_stop_flush,
+    }
     return result
 
 
@@ -398,6 +428,61 @@ def format_counter(counter: Counter) -> str:
     if not counter:
         return "-"
     return ", ".join(f"{key}:{value}" for key, value in counter.most_common())
+
+
+def timeline_event_to_dict(event: TimelineEvent) -> dict[str, Any]:
+    return {
+        "source": event.source,
+        "action": event.action,
+        "reason": event.reason,
+        "packet_index": event.packet_index,
+        "stream_start_seconds": event.stream_start_seconds,
+        "stream_end_seconds": event.stream_end_seconds,
+        "buffer_duration_seconds": event.buffer_duration_seconds,
+        "trailing_silence_detected": event.trailing_silence_detected,
+        "speech_gate_reason": event.speech_gate_reason,
+        "tail_gate_reason": event.tail_gate_reason,
+        "rms": event.rms,
+        "peak": event.peak,
+        "active_ratio": event.active_ratio,
+        "voiced_ratio": event.voiced_ratio,
+        "silence_ratio": event.silence_ratio,
+        "active_seconds": event.active_seconds,
+        "voiced_seconds": event.voiced_seconds,
+        "voiced_density": event.voiced_density,
+    }
+
+
+def audio_analysis_result_to_dict(result: AudioAnalysisResult) -> dict[str, Any]:
+    return {
+        "label": result.label,
+        "path": str(result.path),
+        "gain": result.gain,
+        "scenario": result.scenario,
+        "duration_seconds": result.duration_seconds,
+        "process_count": result.process_count,
+        "drop_count": result.drop_count,
+        "waiting_count": result.waiting_count,
+        "process_reasons": dict(result.process_reasons),
+        "drop_reasons": dict(result.drop_reasons),
+        "speech_gate_reasons": dict(result.gate_reasons),
+        "tail_gate_reasons": dict(result.tail_gate_reasons),
+        "final_buffer_seconds": result.final_buffer_seconds,
+        "stop_flush_event": (
+            timeline_event_to_dict(result.stop_flush_event)
+            if result.stop_flush_event
+            else None
+        ),
+        "timeline_events": [timeline_event_to_dict(event) for event in result.timeline_events],
+    }
+
+
+def write_json_results(results: list[AudioAnalysisResult], output_path: Path) -> None:
+    payload = [audio_analysis_result_to_dict(result) for result in results]
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def format_timeline_event(event: TimelineEvent) -> str:
@@ -486,9 +571,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--mix-background-offset-seconds",
+        nargs="+",
         type=float,
-        default=0.0,
-        help="Offset in seconds before the background wav starts inside the mixed scene",
+        default=[0.0],
+        help="One or more offsets in seconds before the background wav starts inside the mixed scene",
     )
     parser.add_argument(
         "--mix-tail-silence-seconds",
@@ -496,10 +582,15 @@ def main() -> int:
         default=0.0,
         help="Optional silence appended after the mixed scene to make stop-flush / tail behavior easier to inspect",
     )
+    parser.add_argument(
+        "--json-output",
+        help="Optional JSON output path for structured analysis results",
+    )
     args = parser.parse_args()
 
     policy = RealtimeChunkPolicy()
     background_path = Path(args.mix_background).expanduser().resolve() if args.mix_background else None
+    all_results: list[AudioAnalysisResult] = []
     for raw_path in args.paths:
         path = Path(raw_path).expanduser().resolve()
         if background_path:
@@ -515,12 +606,13 @@ def main() -> int:
                     foreground_clip_duration_seconds=args.clip_duration_seconds,
                     background_clip_start_seconds=args.mix_background_start_seconds,
                     background_clip_duration_seconds=args.mix_background_duration_seconds,
-                    background_offset_seconds=args.mix_background_offset_seconds,
+                    background_offset_seconds=background_offset_seconds,
                     tail_silence_seconds=args.mix_tail_silence_seconds,
                     simulate_stop_flush=not args.no_stop_flush,
                 )
                 for gain in args.gains
                 for background_gain in args.mix_background_gains
+                for background_offset_seconds in args.mix_background_offset_seconds
             ]
         else:
             analysis_inputs = [
@@ -537,6 +629,7 @@ def main() -> int:
             ]
 
         for result in analysis_inputs:
+            all_results.append(result)
             print(f"=== {result.label} ===")
             print(f"duration_seconds={result.duration_seconds:.2f}")
             print(
@@ -576,6 +669,11 @@ def main() -> int:
                 for event in timeline:
                     print(f"  {format_timeline_event(event)}")
             print()
+
+    if args.json_output:
+        output_path = Path(args.json_output).expanduser().resolve()
+        write_json_results(all_results, output_path)
+        print(f"json_output={output_path}")
     return 0
 
 
