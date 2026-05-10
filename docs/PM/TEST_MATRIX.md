@@ -152,6 +152,18 @@
     - 混音时的偏移时间与尾部静音拼接；
     - 混音后 stop flush 时间窗仍可被正确分析。
 
+### 2026-05-10 / 片段裁剪分析补充
+- 工具：
+  - `python tools/analyze_realtime_audio.py --clip-start-seconds 0.0 --clip-duration-seconds 2.2 --mix-background 70.wav --mix-background-start-seconds 1.5 --mix-background-duration-seconds 1.0 --mix-background-offset-seconds 0.8 --mix-tail-silence-seconds 0.5 --gains 1.0 --mix-background-gains 0.06 0.03 -- 41.wav`
+- 用途：
+  - 只截取主语音或背景语音中的某个短片段，再做混音和时间线分析。
+  - 更方便构造“短促弱插话”“尾段背景说话”“某一小段主讲 + 后续静音收尾”等局部场景，避免整条 wav 过长、过强掩盖边界行为。
+- 自动化补充检查：
+  - `tests/test_analyze_realtime_audio.py` 应覆盖：
+    - 片段裁剪的起点与时长是否正确；
+    - 超出原始时长时是否安全返回空片段；
+    - 裁剪标签是否正确写入分析结果标题。
+
 ### 2026-05-10 / gain sweep 补充
 - 工具：
   - `python tools/analyze_realtime_audio.py --gains 1.0 0.5 0.25 0.125 -- <wav>`

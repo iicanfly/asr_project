@@ -531,3 +531,25 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 明早优先把真实弱背景样本带入同样的分析命令，对比混音模拟与真实回放之间的差异。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第二十二轮：片段裁剪分析。
+- 修改内容：
+  - `tools/analyze_realtime_audio.py` 新增主音频与背景音频的片段裁剪支持，可指定裁剪起点与裁剪时长后再做单条回放或前景/背景混音分析。
+  - 新增裁剪标签输出，便于把分析结果与具体片段配置对应起来。
+  - `tests/test_analyze_realtime_audio.py` 新增裁剪相关自动化测试，覆盖起点、时长、越界空片段与标签格式。
+- 目的：
+  - 在现有样本偏强的情况下，尽量通过“只取局部短片段”的方式逼近用户最关心的“短促弱插话 / 尾段弱背景说话”场景。
+  - 进一步减少明早静音过滤调参时对整条强主语音样本的依赖。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/analyze_realtime_audio.py --timeline --timeline-limit 12 --clip-start-seconds 0.0 --clip-duration-seconds 2.2 --gains 1.0 --mix-background .\70.wav --mix-background-start-seconds 1.5 --mix-background-duration-seconds 1.0 --mix-background-gains 0.06 0.03 --mix-background-offset-seconds 0.8 --mix-tail-silence-seconds 0.5 -- .\41.wav` 通过。
+  - `python tools/check_doc_corruption.py` 待本轮提交前执行。
+- 当前结果：
+  - 现在已经可以只观察几秒钟的局部主语音 + 局部背景语音 + 尾静音组合场景，离线验证粒度更细。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 明早优先用真实弱背景录音片段跑相同命令，对比局部分析结果与整段分析结果是否一致。

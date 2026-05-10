@@ -26,6 +26,28 @@ def pcm_to_samples(pcm: bytes) -> list[int]:
 
 
 class RealtimeAudioAnalyzerTests(unittest.TestCase):
+    def test_clip_pcm_supports_start_and_duration(self):
+        clipped = analyze_realtime_audio.clip_pcm(
+            pcm_window(1000, 4) + pcm_window(2000, 4) + pcm_window(3000, 4),
+            start_seconds=1.0,
+            duration_seconds=1.0,
+            sample_rate=4,
+            bytes_per_sample=2,
+        )
+
+        self.assertEqual(pcm_to_samples(clipped), [2000, 2000, 2000, 2000])
+
+    def test_clip_pcm_returns_empty_when_start_is_past_end(self):
+        clipped = analyze_realtime_audio.clip_pcm(
+            pcm_window(1000, 4),
+            start_seconds=2.0,
+            duration_seconds=0.5,
+            sample_rate=4,
+            bytes_per_sample=2,
+        )
+
+        self.assertEqual(clipped, b"")
+
     def test_mix_pcm_streams_applies_offset_and_tail_silence(self):
         mixed = analyze_realtime_audio.mix_pcm_streams(
             pcm_window(1000, 4),
@@ -119,6 +141,11 @@ class RealtimeAudioAnalyzerTests(unittest.TestCase):
         self.assertIsNotNone(result.stop_flush_event)
         self.assertEqual(result.stop_flush_event.reason, "stop_flush_pending_audio")
         self.assertGreaterEqual(result.stop_flush_event.stream_end_seconds, 0.85)
+
+    def test_describe_clip_formats_label_suffix(self):
+        self.assertEqual(analyze_realtime_audio.describe_clip(0.0, None), "")
+        self.assertEqual(analyze_realtime_audio.describe_clip(1.25, None), ", clip=1.25s:")
+        self.assertEqual(analyze_realtime_audio.describe_clip(1.25, 0.5), ", clip=1.25s:+0.50s")
 
 
 if __name__ == "__main__":

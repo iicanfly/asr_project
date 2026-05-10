@@ -93,10 +93,51 @@ def load_wav_as_mono_pcm16(path: Path, target_rate: int = 16000) -> bytes:
     return raw
 
 
+def clip_pcm(
+    pcm: bytes,
+    *,
+    start_seconds: float = 0.0,
+    duration_seconds: float | None = None,
+    sample_rate: int = 16000,
+    bytes_per_sample: int = 2,
+) -> bytes:
+    if not pcm:
+        return pcm
+
+    start_byte = seconds_to_pcm_bytes(
+        start_seconds,
+        sample_rate=sample_rate,
+        bytes_per_sample=bytes_per_sample,
+    )
+    if start_byte >= len(pcm):
+        return b""
+
+    clipped = pcm[start_byte:]
+    if duration_seconds is None:
+        return clipped
+
+    clip_length_bytes = seconds_to_pcm_bytes(
+        duration_seconds,
+        sample_rate=sample_rate,
+        bytes_per_sample=bytes_per_sample,
+    )
+    if clip_length_bytes <= 0:
+        return b""
+    return clipped[:clip_length_bytes]
+
+
 def apply_gain(pcm: bytes, gain: float) -> bytes:
     if gain == 1.0:
         return pcm
     return audioop.mul(pcm, 2, gain)
+
+
+def describe_clip(start_seconds: float, duration_seconds: float | None) -> str:
+    if start_seconds <= 0 and duration_seconds is None:
+        return ""
+    if duration_seconds is None:
+        return f", clip={start_seconds:.2f}s:"
+    return f", clip={start_seconds:.2f}s:+{duration_seconds:.2f}s"
 
 
 def mix_pcm_streams(
@@ -266,9 +307,18 @@ def analyze_file(
     packet_samples: int,
     *,
     gain: float = 1.0,
+    clip_start_seconds: float = 0.0,
+    clip_duration_seconds: float | None = None,
     simulate_stop_flush: bool = True,
 ) -> AudioAnalysisResult:
     pcm = load_wav_as_mono_pcm16(path, target_rate=policy.sample_rate)
+    pcm = clip_pcm(
+        pcm,
+        start_seconds=clip_start_seconds,
+        duration_seconds=clip_duration_seconds,
+        sample_rate=policy.sample_rate,
+        bytes_per_sample=policy.bytes_per_sample,
+    )
     result = analyze_pcm(
         pcm,
         policy,
@@ -276,7 +326,10 @@ def analyze_file(
         gain=gain,
         simulate_stop_flush=simulate_stop_flush,
     )
-    result.label = f"{path.name} @ gain={format_gain(gain)}"
+    result.label = (
+        f"{path.name} @ gain={format_gain(gain)}"
+        f"{describe_clip(clip_start_seconds, clip_duration_seconds)}"
+    )
     result.path = path
     return result
 
@@ -289,12 +342,30 @@ def analyze_mixed_files(
     *,
     foreground_gain: float = 1.0,
     background_gain: float = 1.0,
+    foreground_clip_start_seconds: float = 0.0,
+    foreground_clip_duration_seconds: float | None = None,
+    background_clip_start_seconds: float = 0.0,
+    background_clip_duration_seconds: float | None = None,
     background_offset_seconds: float = 0.0,
     tail_silence_seconds: float = 0.0,
     simulate_stop_flush: bool = True,
 ) -> AudioAnalysisResult:
     foreground_pcm = load_wav_as_mono_pcm16(foreground_path, target_rate=policy.sample_rate)
     background_pcm = load_wav_as_mono_pcm16(background_path, target_rate=policy.sample_rate)
+    foreground_pcm = clip_pcm(
+        foreground_pcm,
+        start_seconds=foreground_clip_start_seconds,
+        duration_seconds=foreground_clip_duration_seconds,
+        sample_rate=policy.sample_rate,
+        bytes_per_sample=policy.bytes_per_sample,
+    )
+    background_pcm = clip_pcm(
+        background_pcm,
+        start_seconds=background_clip_start_seconds,
+        duration_seconds=background_clip_duration_seconds,
+        sample_rate=policy.sample_rate,
+        bytes_per_sample=policy.bytes_per_sample,
+    )
     mixed_pcm = mix_pcm_streams(
         foreground_pcm,
         background_pcm,
@@ -313,8 +384,10 @@ def analyze_mixed_files(
         simulate_stop_flush=simulate_stop_flush,
     )
     result.label = (
-        f"{foreground_path.name} @ gain={format_gain(foreground_gain)} "
-        f"+ bg({background_path.name} @ {format_gain(background_gain)}, "
+        f"{foreground_path.name} @ gain={format_gain(foreground_gain)}"
+        f"{describe_clip(foreground_clip_start_seconds, foreground_clip_duration_seconds)} "
+        f"+ bg({background_path.name} @ {format_gain(background_gain)}"
+        f"{describe_clip(background_clip_start_seconds, background_clip_duration_seconds)}, "
         f"offset={background_offset_seconds:.2f}s, tail={tail_silence_seconds:.2f}s)"
     )
     result.path = foreground_path
@@ -370,6 +443,8 @@ def main() -> int:
         default=[1.0],
         help="Optional gain multipliers to replay, e.g. --gains 1.0 0.5 0.25",
     )
+    parser.add_argument("--clip-start-seconds", type=float, default=0.0, help="Clip primary wav from this start offset before analysis")
+    parser.add_argument("--clip-duration-seconds", type=float, help="Optional clip duration for the primary wav")
     parser.add_argument("--timeline", action="store_true", help="Print event timeline for significant chunk decisions")
     parser.add_argument(
         "--timeline-include-waiting",
@@ -399,6 +474,17 @@ def main() -> int:
         help="Background gain multipliers used with --mix-background (default: 0.06)",
     )
     parser.add_argument(
+        "--mix-background-start-seconds",
+        type=float,
+        default=0.0,
+        help="Clip background wav from this start offset before mixing",
+    )
+    parser.add_argument(
+        "--mix-background-duration-seconds",
+        type=float,
+        help="Optional clip duration for the background wav before mixing",
+    )
+    parser.add_argument(
         "--mix-background-offset-seconds",
         type=float,
         default=0.0,
@@ -425,6 +511,10 @@ def main() -> int:
                     packet_samples=args.packet_samples,
                     foreground_gain=gain,
                     background_gain=background_gain,
+                    foreground_clip_start_seconds=args.clip_start_seconds,
+                    foreground_clip_duration_seconds=args.clip_duration_seconds,
+                    background_clip_start_seconds=args.mix_background_start_seconds,
+                    background_clip_duration_seconds=args.mix_background_duration_seconds,
                     background_offset_seconds=args.mix_background_offset_seconds,
                     tail_silence_seconds=args.mix_tail_silence_seconds,
                     simulate_stop_flush=not args.no_stop_flush,
@@ -439,6 +529,8 @@ def main() -> int:
                     policy,
                     packet_samples=args.packet_samples,
                     gain=gain,
+                    clip_start_seconds=args.clip_start_seconds,
+                    clip_duration_seconds=args.clip_duration_seconds,
                     simulate_stop_flush=not args.no_stop_flush,
                 )
                 for gain in args.gains
