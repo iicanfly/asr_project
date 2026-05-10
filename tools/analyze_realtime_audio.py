@@ -17,7 +17,9 @@ from services.asr_service import RealtimeChunkPolicy, decide_chunk_processing
 
 @dataclass
 class AudioAnalysisResult:
+    label: str
     path: Path
+    gain: float
     duration_seconds: float
     process_count: int
     drop_count: int
@@ -49,8 +51,15 @@ def load_wav_as_mono_pcm16(path: Path, target_rate: int = 16000) -> bytes:
     return raw
 
 
-def analyze_file(path: Path, policy: RealtimeChunkPolicy, packet_samples: int) -> AudioAnalysisResult:
+def apply_gain(pcm: bytes, gain: float) -> bytes:
+    if gain == 1.0:
+        return pcm
+    return audioop.mul(pcm, 2, gain)
+
+
+def analyze_file(path: Path, policy: RealtimeChunkPolicy, packet_samples: int, *, gain: float = 1.0) -> AudioAnalysisResult:
     pcm = load_wav_as_mono_pcm16(path, target_rate=policy.sample_rate)
+    pcm = apply_gain(pcm, gain)
     packet_bytes = packet_samples * policy.bytes_per_sample
     buffer = bytearray()
     process_reasons: Counter = Counter()
@@ -82,7 +91,9 @@ def analyze_file(path: Path, policy: RealtimeChunkPolicy, packet_samples: int) -
         waiting_count += 1
 
     return AudioAnalysisResult(
+        label=f"{path.name} @ gain={gain:.2f}",
         path=path,
+        gain=gain,
         duration_seconds=len(pcm) / float(policy.sample_rate * policy.bytes_per_sample),
         process_count=process_count,
         drop_count=drop_count,
@@ -101,23 +112,31 @@ def format_counter(counter: Counter) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="离线回放 wav，分析实时转写门槛命中情况。")
-    parser.add_argument("paths", nargs="+", help="要分析的 wav 文件路径")
-    parser.add_argument("--packet-samples", type=int, default=512, help="模拟前端每次推送的采样点数，默认 512")
+    parser = argparse.ArgumentParser(description="Offline replay wav files and inspect realtime chunk policy behavior.")
+    parser.add_argument("paths", nargs="+", help="Wav file paths to analyze")
+    parser.add_argument("--packet-samples", type=int, default=512, help="Simulated frontend packet size in samples (default: 512)")
+    parser.add_argument(
+        "--gains",
+        nargs="+",
+        type=float,
+        default=[1.0],
+        help="Optional gain multipliers to replay, e.g. --gains 1.0 0.5 0.25",
+    )
     args = parser.parse_args()
 
     policy = RealtimeChunkPolicy()
     for raw_path in args.paths:
         path = Path(raw_path).expanduser().resolve()
-        result = analyze_file(path, policy, packet_samples=args.packet_samples)
-        print(f"=== {result.path.name} ===")
-        print(f"duration_seconds={result.duration_seconds:.2f}")
-        print(f"process_count={result.process_count} drop_count={result.drop_count} waiting_count={result.waiting_count}")
-        print(f"process_reasons={format_counter(result.process_reasons)}")
-        print(f"drop_reasons={format_counter(result.drop_reasons)}")
-        print(f"speech_gate_reasons={format_counter(result.gate_reasons)}")
-        print(f"tail_gate_reasons={format_counter(result.tail_gate_reasons)}")
-        print()
+        for gain in args.gains:
+            result = analyze_file(path, policy, packet_samples=args.packet_samples, gain=gain)
+            print(f"=== {result.label} ===")
+            print(f"duration_seconds={result.duration_seconds:.2f}")
+            print(f"process_count={result.process_count} drop_count={result.drop_count} waiting_count={result.waiting_count}")
+            print(f"process_reasons={format_counter(result.process_reasons)}")
+            print(f"drop_reasons={format_counter(result.drop_reasons)}")
+            print(f"speech_gate_reasons={format_counter(result.gate_reasons)}")
+            print(f"tail_gate_reasons={format_counter(result.tail_gate_reasons)}")
+            print()
     return 0
 
 

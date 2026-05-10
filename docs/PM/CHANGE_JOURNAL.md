@@ -464,3 +464,24 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 明早如需试阈值，优先先改 `.env` 中对应 `ONLINE_REALTIME_*` 项，再结合离线回放与真实页面效果校准。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十九轮：离线分析 gain sweep。
+- 修改内容：
+  - 将 `tools/analyze_realtime_audio.py` 改为支持 `--gains`，可对同一 wav 做多档音量衰减回放。
+  - 用 `41.wav` 做了衰减回放：`gain=1.0/0.5/0.25/0.125` 仍稳定属于 `strong_signal`；进一步衰减到 `0.06/0.03/0.015` 后，开始出现 `tail_silence_detected`、`drop_brief_tail_speech` 与 `drop_weak_background_after_tail_silence` 分支切换。
+- 目的：
+  - 在缺少真实弱背景样本时，先用真实主语音样本做音量衰减，粗看当前门槛在“强语音 -> 弱语音 -> 被抑制”之间的大致过渡区间。
+  - 为明早真实样本回放提供一个更接近调参工作的分析模板。
+- 验证方式：
+  - `python tools/analyze_realtime_audio.py --gains 1.0 0.5 0.25 0.125 -- 41.wav` 通过。
+  - `python tools/analyze_realtime_audio.py --gains 0.06 0.03 0.015 -- 41.wav` 通过。
+  - `python -m py_compile .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 当前门槛对 `41.wav` 的衰减样本，大致在 `gain≈0.06 ~ 0.03` 开始进入弱语音 / 丢弃边界区。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 明早优先拿真实“旁边人小声插话”样本做同样的 gain sweep，对比它和主语音样本的分界差异。

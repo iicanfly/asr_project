@@ -128,6 +128,15 @@
 - 当前已知：
   - 本地 `41.wav / 70.wav / 97.wav` 当前都属于 `strong_signal` 样本，只能验证强主语音链路，暂时不能替代弱背景样本回归。
 
+### 2026-05-10 / gain sweep 补充
+- 工具：
+  - `python tools/analyze_realtime_audio.py --gains 1.0 0.5 0.25 0.125 -- <wav>`
+  - `python tools/analyze_realtime_audio.py --gains 0.06 0.03 0.015 -- <wav>`
+- 用途：
+  - 对同一真实 wav 做音量衰减回放，粗看当前门槛在“强语音 / 弱语音 / 被抑制”之间的过渡区间。
+- 当前已知：
+  - `41.wav` 在高增益段仍稳定为 `strong_signal`；大致到 `gain≈0.06 ~ 0.03` 附近开始出现弱语音与丢弃分支。
+
 ### 2026-05-10 / 环境变量调参补充
 - 手工补充检查：
   - 当通过 `.env` 设置 `ONLINE_REALTIME_*` 或 `INTRANET_REALTIME_*` 后，启动日志应能看到实际生效的覆盖项。
