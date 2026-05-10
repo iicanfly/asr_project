@@ -148,8 +148,25 @@
   - `AGENTS.md`
   - `docs/PM/CODEX_PLAYBOOK.md`
   - `docs/PM/SESSION_SUMMARY.md`
+  - `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`（只要任务涉及实时转写调试、联调、trace 排查、前后端时延判断，就默认先回看）
   - 当前主任务对应的专项说明、方案、实施清单
 - 在进入一轮新的连续开发前，应先快速回看这些长期记忆文件，再决定当前实现路径。
+
+## 实时转写调试补充准则
+- 实时转写出现“慢、碎、没回写、假分段、颜色不对、静音不收尾”时，默认先抓证据，不先拍脑袋。
+- 默认先查：
+  - `/api/v1/debug/status`
+  - `/api/v1/debug/realtime_trace`
+- 默认优先区分：
+  1. 前端展示问题
+  2. 后端状态累计 / 门控问题
+  3. ASR API 耗时问题
+- 如果前端出现两条 `Speaker_1`，先查 trace 里的 `segment_id`：
+  - `segment_id` 不变：优先怀疑前端假分段
+  - `segment_id` 变化：才说明后端真分段
+- 如果用户反馈“说完后很久才黑化”，默认先怀疑静音计时基准或门控逻辑，而不是直接把问题归因到 ASR API。
+- 如果需要继续做实时转写专项开发，默认先回看：
+  - `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
 
 ## 建议的用户提需求格式
 如果方便，用户可以尽量按这个格式提任务：

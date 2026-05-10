@@ -51,6 +51,7 @@
 - 后续动作：
   - 由 Codex 重启服务；
   - 用户刷新网页后做口测，重点看尾部蓝色 / 橙色是否能自动转黑。
+  - 后续已将本轮验证过的调试方法（status / realtime_trace / 前后端分界 / 时延拆解 / 真实样本回放）沉淀为 `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`，并接入 `AGENTS.md` 与 `docs/PM/CODEX_PLAYBOOK.md`。
 
 ### 2026-05-10 / Commit c454127
 - 主题：
