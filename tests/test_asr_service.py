@@ -3,6 +3,7 @@ import unittest
 from services.asr_service import (
     collapse_transcript_text,
     extract_audio_features,
+    has_tail_triggerable_speech,
     is_effective_text_update,
     looks_like_sentence_boundary,
     RealtimeChunkPolicy,
@@ -56,6 +57,19 @@ class ChunkDecisionTests(unittest.TestCase):
         decision = decide_chunk_processing(speech_audio + tail_silence, policy)
         self.assertTrue(decision.should_process)
         self.assertEqual(decision.reason, "tail_silence_detected")
+
+    def test_brief_tail_speech_is_dropped_even_if_it_has_some_voiced_frames(self):
+        policy = RealtimeChunkPolicy(
+            min_audio_seconds=0.5,
+            chunk_seconds=5.0,
+            max_audio_seconds=30.0,
+            tail_silence_bytes=4096,
+        )
+        brief_speech = pcm_frames(([320] * 6) + ([0] * 64))
+        decision = decide_chunk_processing(brief_speech, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertEqual(decision.reason, "drop_brief_tail_speech")
 
     def test_weak_background_audio_is_dropped_at_chunk_boundary(self):
         policy = RealtimeChunkPolicy(chunk_seconds=1.0, max_audio_seconds=30.0)
@@ -122,6 +136,7 @@ class AudioFeatureTests(unittest.TestCase):
         self.assertGreaterEqual(features.active_ratio, policy.min_active_ratio)
         self.assertLess(features.voiced_ratio, policy.min_voiced_ratio)
         self.assertTrue(has_usable_speech(features, policy))
+        self.assertTrue(has_tail_triggerable_speech(features, policy))
 
 
 class FilterResultTests(unittest.TestCase):

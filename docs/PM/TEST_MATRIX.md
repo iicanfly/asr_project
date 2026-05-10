@@ -98,3 +98,10 @@
 - 手工补充检查：
   - 明早真实录音时，优先记录被丢弃 chunk 的 `active_s / voiced_s / silence`，确认是否符合“旁边低声插话应被压制”的预期。
   - 对被保留但音量偏轻的主说话人样本，同样观察 `active_s / voiced_s` 是否稳定高于当前自适应门槛。
+
+### 2026-05-10 / 尾静音短促弱语音补充
+- 自动化补充检查：
+  - 如果一小段短促弱语音后立刻进入尾静音，不应继续等待更长缓冲，也不应直接触发转写，而应走丢弃路径。
+  - 如果同样是尾静音场景，但前面已经形成足够持续的柔和主语音，则仍应允许触发转写。
+- 本轮已新增：
+  - `tests/test_asr_service.py::test_brief_tail_speech_is_dropped_even_if_it_has_some_voiced_frames`

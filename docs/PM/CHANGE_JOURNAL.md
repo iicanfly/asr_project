@@ -355,3 +355,26 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 继续把真实录音日志与前端转写文本对照，必要时再微调自适应时长门槛。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十四轮：短促尾段弱语音抑制。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `tail_trigger_min_active_seconds` 与 `tail_trigger_min_voiced_seconds`。
+  - 新增 `has_tail_triggerable_speech()`，让 `tail_silence_detected` 不再只看“是否存在可用语音”，还要看尾段是否具备最小持续活跃 / 有声时长。
+  - 对“短促弱语音 + 尾部静音”新增 `drop_brief_tail_speech` 路径，避免这类片段继续等待或误进入转写。
+  - 在 `tests/test_asr_service.py` 中补充“短促尾段弱语音应被丢弃”的测试。
+- 目的：
+  - 进一步压制旁边人轻声插一句、短促弱声触发尾静音切片的问题。
+  - 让“尾静音触发转写”更偏向真正形成了一小段完整主语音的场景。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 只有极短一点点有声特征、随后立刻进入尾静音的片段，现在会直接被丢弃，而不是继续拖在缓冲中或误触发转写。
+  - 持续柔和但确实形成一小段主语音的样本，仍可通过 `has_tail_triggerable_speech()` 保留。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续结合真实录音观察 `drop_brief_tail_speech` 是否过严，是否会误伤非常短但用户确实想保留的单词级表达。

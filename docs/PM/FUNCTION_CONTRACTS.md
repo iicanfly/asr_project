@@ -392,6 +392,17 @@
   - 对更长的缓冲，函数会要求更高的最小有声 / 活跃持续时长。
   - 对较短尾音，仍保留较低兜底门槛，避免 stop flush 场景误丢最后一句。
 
+### `services/asr_service.py:has_tail_triggerable_speech(features, policy)`
+- 输入：
+  - `AudioFeatures`
+  - `RealtimeChunkPolicy`
+- 输出：
+  - `bool`
+- 作用：
+  - 专门用于 `tail_silence_detected` 场景，判断这段音频是否已经足够形成一个值得立刻切出的尾段。
+- 当前约束：
+  - 除了满足 `has_usable_speech()`，还要求尾段具备最小活跃秒数与最小有声秒数；强信号则可直接放行。
+
 ### `services/asr_service.py:refine_asr_result_text(text, filler_words=...)`
 - 输入：
   - `text: str`
