@@ -585,8 +585,7 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
                 time: timeStr,
                 serverResultId: data.result_id || null,
                 segmentId: data.segment_id || null,
-                resultType: data.result_type || (data.is_final ? 'final' : 'partial'),
-                mergePrefixContent: ''
+                resultType: data.result_type || (data.is_final ? 'final' : 'partial')
             };
         }
 
@@ -633,70 +632,6 @@ function rememberResultId(resultId) {
             return shouldInsertTranscriptSpace(prev, next) ? `${prev} ${next}` : `${prev}${next}`;
         }
 
-        function startsWithOrderedListMarker(text) {
-            const value = (text || '').trim();
-            if (!value) return false;
-            const firstChar = value.charAt(0);
-            const secondChar = value.charAt(1);
-            const thirdChar = value.charAt(2);
-            const listPunctuation = '、，:：.．)）';
-
-            const isOrderedListNumeral = (char) => {
-                if (!char) return false;
-                if (/[1-9]/.test(char)) return true;
-                const code = char.codePointAt(0);
-                return [
-                    0x4e00, // 一
-                    0x4e8c, // 二
-                    0x4e09, // 三
-                    0x56db, // 四
-                    0x4e94, // 五
-                    0x516d, // 六
-                    0x4e03, // 七
-                    0x516b, // 八
-                    0x4e5d, // 九
-                    0x5341  // 十
-                ].includes(code);
-            };
-
-            if (value.length >= 2 && isOrderedListNumeral(firstChar) && listPunctuation.includes(secondChar)) {
-                return true;
-            }
-
-            if (
-                value.length >= 3 &&
-                (firstChar === '（' || firstChar === '(') &&
-                isOrderedListNumeral(secondChar) &&
-                listPunctuation.includes(thirdChar)
-            ) {
-                return true;
-            }
-
-            return false;
-        }
-
-        function containsOrderedListMarker(text) {
-            const value = (text || '').trim();
-            if (!value) return false;
-            return /(?:^|[\u3002\uFF01\uFF1F\s\uFF1A:])(?:[\u4E00\u4E8C\u4E09\u56DB\u4E94\u516D\u4E03\u516B\u4E5D\u5341]+|\d+)[\u3001\uFF0C:\uFF1A.\uFF0E]/u.test(value);
-        }
-
-        function shouldMergeStructuredContinuation(lastEntry, text, now) {
-            if (!lastEntry) return false;
-
-            const previousText = (lastEntry.content || '').trim();
-            const nextText = (text || '').trim();
-            if (!previousText || !nextText) return false;
-
-            if (now - lastMessageTime >= 15000) return false;
-
-            return (
-                startsWithOrderedListMarker(nextText) ||
-                startsWithOrderedListMarker(previousText) ||
-                containsOrderedListMarker(previousText)
-            );
-        }
-
         function updateMessageUI(messageId, text, time) {
             const messageDiv = document.querySelector(`div[data-message-id="${messageId}"]`);
             if (!messageDiv) return false;
@@ -740,18 +675,14 @@ function rememberResultId(resultId) {
 
             if (!target) return false;
 
-            const mergedContent = target.mergePrefixContent
-                ? mergeTranscriptText(target.mergePrefixContent, text)
-                : text;
-
-            target.content = mergedContent;
+            target.content = text;
             target.time = timeStr;
             target.serverResultId = data.result_id || target.serverResultId;
             target.segmentId = data.segment_id || target.segmentId;
             target.resultType = data.result_type || target.resultType;
             rememberResultId(data.result_id);
 
-            updateMessageUI(target.id, mergedContent, timeStr);
+            updateMessageUI(target.id, text, timeStr);
             saveCache();
             document.getElementById('clear-btn').style.display = 'block';
             return true;
@@ -792,26 +723,14 @@ function handleASRResult(data) {
                 data.segment_id !== lastEntry.segmentId
             );
 
-            // 智能分段逻辑：
-            // 1. 如果后端显式给出了相同 segment_id，则强制继续合并到同一个段落
-            // 2. 如果后端显式切换了新的 segment_id，则强制新建段落
-            // 3. 其它情况沿用原有“同说话人 + 10 秒内”规则
             const shouldMerge = sameSegmentContinuation || (
-                serverDrivenSegmentBoundary &&
-                shouldMergeStructuredContinuation(lastEntry, text, now)
-            ) || (
                 !serverDrivenSegmentBoundary &&
                 lastSpeaker === data.speaker_id &&
                 (now - lastMessageTime < 10000)
             );
 
             if (shouldMerge && transcriptData.length > 0) {
-                if (serverDrivenSegmentBoundary) {
-                    lastEntry.mergePrefixContent = lastEntry.content;
-                }
-
-                const baseText = lastEntry.mergePrefixContent || lastEntry.content;
-                const mergedText = mergeTranscriptText(baseText, text);
+                const mergedText = mergeTranscriptText(lastEntry.content, text);
                 addMessageUI(data.speaker_id, text, timeStr, true, lastEntry.id);
                 lastEntry.content = mergedText;
                 lastEntry.time = timeStr;

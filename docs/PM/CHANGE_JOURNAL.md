@@ -1047,3 +1047,27 @@
 - 当前结果：
   - 前端展示文本已不再是完全无标点的“连字串”。
   - 分段策略变得更保守，优先减少过早切段。
+
+### 2026-05-11 / Commit 待提交
+- 主题：
+  - 移除实时录音中的自动分段行为；同一次录音全过程只保留一个段落，停止录音时再做一次整段回写。
+- 修改内容：
+  - `main.py`
+    - 关闭录音过程中的 `segment_rewrite` 触发，仅在 `stop_recording_finalize_segment` 时执行整段回写。
+    - 保留 chunk 级 `segment_partial`，保证录音过程中仍持续有输出，但不会因为整段重转写越来越慢。
+  - `static/js/app.js`
+    - 删除最近加入的“跨 segment 列表项合并”与 `mergePrefixContent` 逻辑。
+    - 前端重新回到最简单模式：同一个 `segment_id` 继续合并，不同 `segment_id` 新起一段。
+- 目的：
+  - 直接满足用户当前要求：“同一次录音全部在同一段，只有停止后重新开始/继续录音才另起一段”。
+  - 同时缓解“录着时间越来越长时输出很慢甚至不输出”的问题，因为录音过程中不再反复对整段长音频做 rewrite。
+- 验证方式：
+  - `node --check static/js/app.js`
+  - `conda run --no-capture-output -n asr python -m py_compile main.py`
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+  - 使用 `socketio.test_client()` 回放真实 PCM：
+    - 录音过程中只看到同一 `segment_id` 的 `segment_partial`
+    - `segment_rewrite` 只在 stop 后出现 1 次
+- 当前结果：
+  - 用真实录音 `stream_recording_20260510_233016.pcm` 回放时，录音过程中只保留 1 个有效段；
+  - stop 后才触发一次整段 rewrite，符合当前设计目标。

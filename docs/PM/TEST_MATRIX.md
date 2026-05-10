@@ -340,3 +340,25 @@
   - 已看到 `重要约束。`
   - 已看到 `归纳，禁止编造。`
   - 已看到带句号的 `segment_rewrite` 输出。
+
+## 2026-05-11 / 单段录音模式回归
+### 自动化验证
+- 语法检查：
+  - `node --check static/js/app.js`
+  - `conda run --no-capture-output -n asr python -m py_compile main.py`
+- 单元测试：
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+- 结果：
+  - 通过。
+
+### 真实录音回放验证
+- 方法：
+  - 用 `socketio.test_client()` 回放真实录音 `temp_audio/stream_recording_20260510_233016.pcm` 的前半段。
+- 观察点：
+  1. 录音过程中是否只出现同一个有效 `segment_id`
+  2. 录音过程中是否不再触发整段 `segment_rewrite`
+  3. stop 后是否只触发 1 次整段 `segment_rewrite`
+- 当前结果：
+  - 录音过程中连续收到多个 `segment_partial`，全部落在同一个 `segment_id`
+  - `segment_rewrite` 只在 stop 后出现 1 次
+  - 与“单次录音只保留一段”的目标一致

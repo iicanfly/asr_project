@@ -416,17 +416,9 @@ def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision,
         rewrite_reason = force_reason or "stop_recording_force_finalize"
         should_finalize_segment = True
     else:
-        rewrite_decision = decide_segment_rewrite(
-            segment_duration_seconds=active_segment['duration_seconds'],
-            segment_chunk_count=active_segment['chunk_count'],
-            last_rewrite_chunk_count=active_segment['last_rewrite_chunk_count'],
-            latest_chunk_reason=chunk_decision.reason,
-            current_segment_text=active_segment.get('latest_display_text', ''),
-            policy=SEGMENT_REWRITE_POLICY,
-        )
-        should_emit_rewrite = rewrite_decision.should_emit_rewrite
-        should_finalize_segment = rewrite_decision.should_finalize_segment
-        rewrite_reason = rewrite_decision.reason
+        should_emit_rewrite = False
+        should_finalize_segment = False
+        rewrite_reason = "segment_rewrite_disabled_until_stop"
 
     if should_emit_rewrite:
         segment_text_result = transcribe_realtime_chunk(bytes(active_segment['audio_buffer']))
