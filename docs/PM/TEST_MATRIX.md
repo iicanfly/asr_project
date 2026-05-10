@@ -62,7 +62,7 @@
     - 当同一个 `result_id` 被重复投递时，前端也不应重复渲染。
 - 静音过滤 / 弱语音专项观察：
   - 后端日志里应重点看 `Dropping realtime buffer` 与 `Processing realtime chunk` 两类日志。
-  - 观察 `rms / peak / active / voiced` 指标与实际听感是否一致。
+  - 观察 `rms / peak / active / voiced / active_s / voiced_s / silence` 指标与实际听感是否一致。
   - 如果旁边人的小声说话明显减少触发，同时主说话人的弱音没有被大量漏掉，说明第一轮阈值方向正确。
 - 语气词过滤专项观察：
   - 后端日志里应同时观察“原始结果 / 清洗后结果”，确认是否把低价值语气词成功收敛。
@@ -93,3 +93,8 @@
 - 本轮已新增：
   - `tests/test_asr_service.py::test_active_noise_without_voiced_presence_is_not_usable_speech`
   - `tests/test_asr_service.py::test_sustained_soft_speech_still_counts_as_usable`
+
+### 2026-05-10 / 静音过滤日志校准补充
+- 手工补充检查：
+  - 明早真实录音时，优先记录被丢弃 chunk 的 `active_s / voiced_s / silence`，确认是否符合“旁边低声插话应被压制”的预期。
+  - 对被保留但音量偏轻的主说话人样本，同样观察 `active_s / voiced_s` 是否稳定高于当前自适应门槛。

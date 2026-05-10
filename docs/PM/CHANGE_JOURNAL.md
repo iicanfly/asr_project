@@ -336,3 +336,22 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 继续结合真实录音日志，观察 `rms / peak / active / voiced` 与主观听感是否一致。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十三轮：静音过滤日志可观测性增强。
+- 修改内容：
+  - 在 `main.py` 的实时 chunk 处理、实时缓冲丢弃、stop flush 丢弃日志中补充 `active_s / voiced_s / silence`。
+  - 同步更新 `TEST_MATRIX.md` 与 `SESSION_SUMMARY.md`，明确明早真实录音需要重点对照的新指标。
+- 目的：
+  - 降低第二轮静音过滤门槛的后续调参成本，避免只看比例难以判断“真实持续时长”。
+  - 让明早测试时可以更快分辨：是阈值过严漏掉了主语音，还是弱背景音确实应该被压下去。
+- 验证方式：
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 后端日志现在能直接给出活跃秒数、有声秒数与静音占比，便于下一轮人工校准。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续把真实录音日志与前端转写文本对照，必要时再微调自适应时长门槛。
