@@ -556,6 +556,240 @@ conda run --no-capture-output -n asr python tools/check_doc_corruption.py
 
 ---
 
+## 故障字典（症状 -> 排查路径 -> 命令 -> 常见修法）
+
+这一节用于后续快速按“症状”直接走固定排查流程。
+
+### 故障 1：没有点击停止录音，却新开了第二条 `Speaker_1`
+
+#### 优先怀疑点
+
+1. 前端假分段
+2. `replace_target_id` 没命中
+3. `segment_id` 兜底替换逻辑缺失
+
+#### 先看什么证据
+
+1. `realtime_trace` 里最近几条事件的 `segment_id`
+2. 前端当前气泡是否对应同一条 `segment_id`
+
+#### 常用命令
+
+```powershell
+python -c "import urllib.request, ssl, json; ctx=ssl._create_unverified_context(); data=json.loads(urllib.request.urlopen('https://127.0.0.1:6543/api/v1/debug/realtime_trace', context=ctx, timeout=10).read().decode('utf-8')); [print(e['ts'], e.get('segment_id'), e.get('result_type'), e.get('replace_target_id')) for e in data['events'][-20:]]"
+```
+
+#### 判断规则
+
+- 如果 `segment_id` 一直相同：
+  - 优先判定为前端假分段
+- 如果 `segment_id` 发生变化：
+  - 才说明后端真分段
+
+#### 常见修法
+
+- 优先补前端按 `segment_id` 的兜底替换逻辑
+- 不要先去改后端分段阈值
+
+---
+
+### 故障 2：说完后静音很久，尾巴还是不黑化
+
+#### 优先怀疑点
+
+1. idle timeout 计时基准错误
+2. 静音 PCM 持续刷新了计时器
+3. 实际触发的是 30 秒窗口高级回写，而不是 10 秒静音收尾
+
+#### 先看什么证据
+
+1. trace 中最终触发的 `processing_reason`
+2. 后端日志中 idle rewrite 相关日志
+3. `last_audio_time` 与 `last_speech_time` 的语义是否被混用
+
+#### 常用命令
+
+```powershell
+python -c "import urllib.request, ssl, json; ctx=ssl._create_unverified_context(); data=json.loads(urllib.request.urlopen('https://127.0.0.1:6543/api/v1/debug/realtime_trace', context=ctx, timeout=10).read().decode('utf-8')); [print(e['ts'], e.get('result_type'), e.get('processing_reason')) for e in data['events'][-20:]]"
+Get-Content -Path C:\Users\16010\Desktop\asr_developing_project\asr_project\temp_audio\server_stdout.log -Tail 200
+```
+
+#### 判断规则
+
+- 如果最后是 `high_rewrite_window_30s`：
+  - 说明不是 10 秒静音收尾生效
+- 如果是 `idle_high_rewrite_timeout`：
+  - 说明后端收尾触发了，应继续查前端替换或颜色层
+
+#### 常见修法
+
+- idle 计时基准改成 `last_speech_time`
+- 不要继续使用 `last_audio_time` 判断静音超时
+
+---
+
+### 故障 3：用户感觉“很慢”，但不清楚慢在哪
+
+#### 优先怀疑点
+
+1. 前端送包慢
+2. 后端 chunk 等待太久
+3. 门控把音频一直攒着不放
+4. ASR API 请求本身慢
+5. 回写触发条件太迟
+6. 前端渲染 / 替换看起来慢
+
+#### 先看什么证据
+
+1. trace 时间线
+2. 日志里 chunk 处理时间点
+3. 用户口述的说话结束时刻与前端变化时刻
+
+#### 常用命令
+
+```powershell
+python -c "import urllib.request, ssl, json; ctx=ssl._create_unverified_context(); data=json.loads(urllib.request.urlopen('https://127.0.0.1:6543/api/v1/debug/realtime_trace', context=ctx, timeout=10).read().decode('utf-8')); [print(e['ts'], e.get('result_type'), e.get('processing_reason')) for e in data['events'][-30:]]"
+Get-Content -Path C:\Users\16010\Desktop\asr_developing_project\asr_project\temp_audio\server_stdout.log -Tail 300
+```
+
+#### 判断规则
+
+- 如果 trace 很久都没有新事件：
+  - 优先查后端门控 / 缓冲
+- 如果 trace 很快有事件，但前端很晚才变：
+  - 优先查前端替换 / 渲染
+- 如果后端发起处理后很久才出结果：
+  - 再怀疑 ASR API
+
+#### 常见修法
+
+- 先补耗时日志，再定点优化
+- 不要在“慢的层次还没确定”前就盲调阈值
+
+---
+
+### 故障 4：前面已经稳定的文本又被刷成橙色
+
+#### 优先怀疑点
+
+1. 前端按整段统一染色
+2. 没有按 `stable_text / medium_text / partial_text` 三层渲染
+3. partial 到来时把老文本整体覆盖掉了
+
+#### 先看什么证据
+
+1. 后端 payload 是否已经带三层文本
+2. 前端是否按层渲染而不是按整段 `text` 渲染
+
+#### 常用命令
+
+```powershell
+python -c "import urllib.request, ssl, json; ctx=ssl._create_unverified_context(); data=json.loads(urllib.request.urlopen('https://127.0.0.1:6543/api/v1/debug/realtime_trace', context=ctx, timeout=10).read().decode('utf-8')); print(data['events'][-1])"
+node --check C:\Users\16010\Desktop\asr_developing_project\asr_project\static\js\app.js
+```
+
+#### 常见修法
+
+- 前端改成三层文本分别渲染
+- 新 partial 到来时只更新尾部层，不重刷稳定层
+
+---
+
+### 故障 5：完全不说话也会冒出“嗯 / thank you / yeah”
+
+#### 优先怀疑点
+
+1. 静音片段仍然被上传到了 ASR
+2. 文本层低信息片段清洗不够
+3. 门控过松，把静音误判成可处理音频
+
+#### 先看什么证据
+
+1. 日志里是否频繁出现 chunk 被处理
+2. trace 中这些输出对应的 `processing_reason`
+3. 被送进 ASR 的片段是否本身接近静音
+
+#### 常用命令
+
+```powershell
+Get-Content -Path C:\Users\16010\Desktop\asr_developing_project\asr_project\temp_audio\server_stdout.log -Tail 300
+python -c "import urllib.request, ssl, json; ctx=ssl._create_unverified_context(); data=json.loads(urllib.request.urlopen('https://127.0.0.1:6543/api/v1/debug/realtime_trace', context=ctx, timeout=10).read().decode('utf-8')); [print(e['ts'], e.get('processing_reason'), e.get('text')) for e in data['events'][-30:]]"
+```
+
+#### 常见修法
+
+- 先收紧静音门控
+- 再补文本层低信息片段清洗
+- 如果两者同时存在问题，优先先控“静音不上传”
+
+---
+
+### 故障 6：说了话，但前端长时间完全不出字
+
+#### 优先怀疑点
+
+1. 门控太严，把真实有声活动挡掉了
+2. 缓冲一直没到 chunk / tail 触发条件
+3. 说话方式较轻，未被识别成“真实有声活动”
+
+#### 先看什么证据
+
+1. 日志里是否长期只有 retain / waiting，没有 process
+2. 音频特征值是否明显低于当前阈值
+3. 真实样本回放是否也复现同样问题
+
+#### 常用命令
+
+```powershell
+Get-Content -Path C:\Users\16010\Desktop\asr_developing_project\asr_project\temp_audio\server_stdout.log -Tail 300
+```
+
+#### 常见修法
+
+- 先检查门控与阈值
+- 优先用真实录音样本做离线回放验证
+- 不要只靠口头描述盲调
+
+---
+
+### 故障 7：发布前担心内网链路被改乱
+
+#### 优先怀疑点
+
+1. 外网调试时把 simplified pipeline 默认带进了内网
+2. 内网 ASR 调用模式被误改
+3. 双环境分流条件被改坏
+
+#### 先看什么证据
+
+1. `USE_INTRANET=True` 时的 import 级检查输出
+2. `config.ASR_MODE`
+3. `main.ENABLE_SIMPLIFIED_REALTIME_PIPELINE`
+4. `main.DECIDE_REALTIME_CHUNK.__name__`
+
+#### 常用命令
+
+```powershell
+@'
+import os, subprocess
+base = r'C:\Users\16010\Desktop\asr_developing_project\asr_project'
+env = os.environ.copy()
+env['USE_INTRANET'] = 'True'
+code = "import config; import main; print('USE_INTRANET=', config.USE_INTRANET); print('ASR_MODE=', config.ASR_MODE); print('SIMPLIFIED=', main.ENABLE_SIMPLIFIED_REALTIME_PIPELINE); print('DECIDER=', main.DECIDE_REALTIME_CHUNK.__name__)"
+result = subprocess.run([r'C:\Users\16010\.conda\envs\asr\python.exe', '-c', code], cwd=base, env=env, capture_output=True, text=True)
+print(result.stdout)
+print(result.stderr)
+print('returncode=', result.returncode)
+'@ | python -
+```
+
+#### 常见修法
+
+- 不要凭感觉发布
+- 每次发布前都做一次内网 import 级核查
+
+---
+
 ## 以后继续补充的方向
 
 这份手册后续还可以继续沉淀：

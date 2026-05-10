@@ -152,6 +152,13 @@ USE_INTRANET=False
 
 - `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
 
+这份手册当前已经包含：
+
+- 调试原则
+- 标准调试清单
+- 常用命令速查表
+- 故障字典（症状 -> 排查路径 -> 命令 -> 常见修法）
+
 ---
 
 ## 推荐提需求方式
