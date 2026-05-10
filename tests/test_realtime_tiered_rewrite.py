@@ -16,6 +16,7 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
             "processing": False,
             "stop_requested": False,
             "last_audio_time": 0.0,
+            "last_speech_time": 0.0,
             "last_idle_rewrite_audio_time": 0.0,
             "buffer": bytearray(),
         }
@@ -160,7 +161,8 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
         active_segment["last_result_id"] = "demo_result_prev"
         active_segment["latest_display_text"] = active_segment["stage_display_text"]
         active_segment["latest_result_type"] = "segment_partial"
-        session["last_audio_time"] = 100.0
+        session["last_speech_time"] = 100.0
+        session["last_audio_time"] = 109.5
         emitted_payloads = []
 
         def fake_emit(event_name, payload, to=None):

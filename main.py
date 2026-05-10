@@ -29,6 +29,7 @@ from services.asr_service import (
     decide_segment_rewrite,
     decide_stop_flush,
     decide_stop_flush_simple,
+    extract_audio_features,
     format_asr_display_text,
     refine_asr_result_text,
     retain_realtime_buffer,
@@ -308,6 +309,7 @@ class SessionManager:
                     'buffer': bytearray(),
                     'last_process_time': time.time(),
                     'last_audio_time': time.time(),
+                    'last_speech_time': 0.0,
                     'last_idle_rewrite_audio_time': 0.0,
                     'processing': False,
                     'stop_requested': False,
@@ -365,6 +367,46 @@ session_mgr = SessionManager()
 def transcribe_realtime_chunk(audio_data: bytes) -> str:
     wav_data = add_wav_header(audio_data)
     return asr_adapter.transcribe_audio_bytes(wav_data, filename="audio.wav", mime_type="audio/wav")
+
+
+def contains_meaningful_realtime_activity(audio_data: bytes) -> bool:
+    if not audio_data:
+        return False
+
+    features = extract_audio_features(
+        audio_data,
+        sample_rate=REALTIME_CHUNK_POLICY.sample_rate,
+        bytes_per_sample=REALTIME_CHUNK_POLICY.bytes_per_sample,
+        frame_size=REALTIME_CHUNK_POLICY.frame_size,
+        silence_threshold=REALTIME_CHUNK_POLICY.silence_threshold,
+        peak_threshold=REALTIME_CHUNK_POLICY.peak_threshold,
+        speech_rms_threshold=REALTIME_CHUNK_POLICY.speech_rms_threshold,
+        speech_peak_threshold=REALTIME_CHUNK_POLICY.speech_peak_threshold,
+    )
+    if features.duration_seconds <= 0:
+        return False
+
+    min_packet_rms = max(
+        REALTIME_CHUNK_POLICY.silence_threshold * 1.8,
+        REALTIME_CHUNK_POLICY.active_speech_rms_threshold * 0.65,
+    )
+    min_packet_peak = max(
+        REALTIME_CHUNK_POLICY.peak_threshold + 40,
+        int(REALTIME_CHUNK_POLICY.active_speech_peak_threshold * 0.65),
+    )
+    min_active_run_seconds = max(0.03, REALTIME_CHUNK_POLICY.min_active_run_seconds * 0.2)
+    min_voiced_run_seconds = max(0.02, REALTIME_CHUNK_POLICY.min_voiced_run_seconds * 0.35)
+
+    has_packet_energy = (
+        features.rms >= min_packet_rms
+        and features.peak >= min_packet_peak
+    )
+    has_packet_presence = (
+        features.active_ratio >= 0.15
+        or features.max_active_run_seconds >= min_active_run_seconds
+        or features.max_voiced_run_seconds >= min_voiced_run_seconds
+    )
+    return has_packet_energy and has_packet_presence
 
 
 def get_or_create_active_segment(session):
@@ -976,20 +1018,21 @@ def try_drain_realtime_buffer(session, sid, *, max_rounds=6):
 def process_idle_realtime_session(session, sid, *, now: float | None = None) -> bool:
     current_time = time.time() if now is None else now
     last_audio_time = session.get('last_audio_time', session.get('last_process_time', current_time))
+    last_speech_time = session.get('last_speech_time', 0.0) or last_audio_time
     last_idle_rewrite_audio_time = session.get('last_idle_rewrite_audio_time', 0.0)
 
     if session.get('stop_requested') or session.get('processing'):
         return False
-    if last_audio_time <= 0 or last_audio_time <= last_idle_rewrite_audio_time:
+    if last_speech_time <= 0 or last_speech_time <= last_idle_rewrite_audio_time:
         return False
-    if (current_time - last_audio_time) < IDLE_HIGH_REWRITE_SECONDS:
+    if (current_time - last_speech_time) < IDLE_HIGH_REWRITE_SECONDS:
         return False
 
     flush_pending_realtime_buffer(session, sid, force_finalize_segment=False)
 
     active_segment = session.get('active_segment')
     if not active_segment or not active_segment.get('stage_display_text'):
-        session['last_idle_rewrite_audio_time'] = last_audio_time
+        session['last_idle_rewrite_audio_time'] = last_speech_time
         return False
 
     idle_chunk_decision = ChunkDecision(
@@ -1008,11 +1051,12 @@ def process_idle_realtime_session(session, sid, *, now: float | None = None) -> 
         finalize_stage=True,
         ensure_sentence_end=True,
     )
-    session['last_idle_rewrite_audio_time'] = last_audio_time
+    session['last_idle_rewrite_audio_time'] = last_speech_time
     logger.info(
-        "Idle high rewrite triggered sid=%s segment=%s idle_seconds=%.2f emitted=%s",
+        "Idle high rewrite triggered sid=%s segment=%s speech_idle_seconds=%.2f raw_audio_idle_seconds=%.2f emitted=%s",
         sid,
         active_segment['segment_id'],
+        current_time - last_speech_time,
         current_time - last_audio_time,
         emitted,
     )
@@ -1093,7 +1137,10 @@ def on_audio_stream(data):
     fh.write(data)
     fh.flush()
 
-    session['last_audio_time'] = time.time()
+    now = time.time()
+    session['last_audio_time'] = now
+    if contains_meaningful_realtime_activity(data):
+        session['last_speech_time'] = now
     session['buffer'].extend(data)
 
     try_drain_realtime_buffer(session, sid)
