@@ -35,6 +35,7 @@ class RealtimeChunkPolicy:
     min_voiced_seconds: float = 0.4
     active_speech_rms_threshold: float = 0.0032
     active_speech_peak_threshold: int = 220
+    min_voiced_density_for_soft_speech: float = 0.2
     tail_trigger_min_active_seconds: float = 0.28
     tail_trigger_min_voiced_seconds: float = 0.12
     weak_audio_rms_threshold: float = 0.0022
@@ -59,6 +60,12 @@ class AudioFeatures:
     @property
     def voiced_seconds(self) -> float:
         return self.voiced_ratio * self.duration_seconds
+
+    @property
+    def voiced_density(self) -> float:
+        if self.active_ratio <= 0:
+            return 0.0
+        return self.voiced_ratio / self.active_ratio
 
 
 @dataclass(frozen=True)
@@ -277,6 +284,7 @@ def describe_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy)
         and features.rms >= policy.active_speech_rms_threshold
         and features.peak >= policy.active_speech_peak_threshold
         and features.voiced_ratio >= (policy.min_voiced_ratio * 0.5)
+        and features.voiced_density >= policy.min_voiced_density_for_soft_speech
     )
     if sustained_active_speech:
         return "sustained_soft_speech"

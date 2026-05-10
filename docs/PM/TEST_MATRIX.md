@@ -113,3 +113,9 @@
 - 自动化补充检查：
   - 噪声样本应稳定输出 `no_usable_speech`。
   - 柔和但持续的人声样本应稳定输出 `sustained_soft_speech` 与 `tail_sustained_presence`。
+
+### 2026-05-10 / voiced density 补充
+- 自动化补充检查：
+  - 如果活跃帧不少，但有声帧只占活跃帧中的很小一部分，则不应再走 `sustained_soft_speech` 兜底。
+- 手工补充检查：
+  - 明早真实录音时，结合 `density` 与 `speech_gate` 观察：误触发背景音是否集中出现在低 density 片段。

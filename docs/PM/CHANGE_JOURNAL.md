@@ -400,3 +400,25 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 继续把真实录音中的 gate reason 与前端文本效果对照，决定下一轮是否需要微调具体阈值。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十六轮：柔和语音兜底的有声密度约束。
+- 修改内容：
+  - 在 `RealtimeChunkPolicy` 中新增 `min_voiced_density_for_soft_speech`。
+  - 为 `AudioFeatures` 增加 `voiced_density` 派生指标，并把它纳入 `sustained_soft_speech` 的放行条件。
+  - `main.py` 日志新增 `density` 输出，方便明早从日志直接观察“有声帧在活跃帧中的占比”。
+  - 在 `tests/test_asr_service.py` 中新增“活跃很多但有声过稀”的样本，确保这类片段不会再触发柔和语音兜底。
+- 目的：
+  - 进一步压制“活跃度不低，但真正有声成分很稀薄”的背景噪声或远处插话。
+  - 保住持续柔和主语音的同时，减少软语音兜底被稀疏噪声钻空子的概率。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 柔和语音兜底现在除了看 RMS / peak / active / voiced，还会看 voiced density；稀疏有声片段更难被误放行。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续结合真实录音观察 density 与误触发之间是否存在明显相关性。

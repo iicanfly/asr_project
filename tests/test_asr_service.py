@@ -143,6 +143,18 @@ class AudioFeatureTests(unittest.TestCase):
         self.assertEqual(describe_usable_speech(features, policy), "sustained_soft_speech")
         self.assertEqual(describe_tail_triggerable_speech(features, policy), "tail_sustained_presence")
 
+    def test_sparse_voiced_activity_does_not_trigger_soft_speech_fallback(self):
+        policy = RealtimeChunkPolicy()
+        sparse_voiced_audio = pcm_frames(([240] * 28) + ([320] * 6) + ([0] * 116))
+        features = extract_audio_features(sparse_voiced_audio)
+
+        self.assertGreaterEqual(features.active_ratio, policy.min_active_ratio)
+        self.assertGreaterEqual(features.rms, policy.active_speech_rms_threshold)
+        self.assertGreaterEqual(features.peak, policy.active_speech_peak_threshold)
+        self.assertLess(features.voiced_density, policy.min_voiced_density_for_soft_speech)
+        self.assertFalse(has_usable_speech(features, policy))
+        self.assertEqual(describe_usable_speech(features, policy), "no_usable_speech")
+
 
 class FilterResultTests(unittest.TestCase):
     def test_filters_short_or_filler_only_text(self):

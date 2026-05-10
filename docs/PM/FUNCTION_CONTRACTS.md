@@ -421,6 +421,14 @@
 - 作用：
   - 让尾静音切片路径能解释：当前尾段是因为足够强、足够持续，还是因为持续性不足而未被切出。
 
+### `services/asr_service.py:AudioFeatures.voiced_density`
+- 输入：
+  - 无（由 `AudioFeatures` 派生）
+- 输出：
+  - `float`
+- 作用：
+  - 表示“有声帧在活跃帧中的占比”，用于区分“持续柔和主语音”与“活跃但有声很稀的噪声”。
+
 ### `services/asr_service.py:refine_asr_result_text(text, filler_words=...)`
 - 输入：
   - `text: str`

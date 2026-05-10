@@ -395,7 +395,7 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
     active_segment['duration_seconds'] += chunk_decision.audio_duration_seconds
 
     logger.info(
-        "Processing realtime chunk sid=%s chunk=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs bytes=%s rms=%.4f peak=%s active=%.2f voiced=%.2f active_s=%.2fs voiced_s=%.2fs silence=%.2f",
+        "Processing realtime chunk sid=%s chunk=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs bytes=%s rms=%.4f peak=%s active=%.2f voiced=%.2f density=%.2f active_s=%.2fs voiced_s=%.2fs silence=%.2f",
         sid,
         session['chunk_seq'],
         chunk_decision.reason,
@@ -407,6 +407,7 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
         chunk_decision.audio_features.peak if chunk_decision.audio_features else 0,
         chunk_decision.audio_features.active_ratio if chunk_decision.audio_features else 0.0,
         chunk_decision.audio_features.voiced_ratio if chunk_decision.audio_features else 0.0,
+        chunk_decision.audio_features.voiced_density if chunk_decision.audio_features else 0.0,
         chunk_decision.audio_features.active_seconds if chunk_decision.audio_features else 0.0,
         chunk_decision.audio_features.voiced_seconds if chunk_decision.audio_features else 0.0,
         chunk_decision.audio_features.silence_ratio if chunk_decision.audio_features else 0.0,
@@ -476,7 +477,7 @@ def flush_pending_realtime_buffer(session, sid, *, force_finalize_segment=False)
         if chunk_decision.drop_buffer:
             features = chunk_decision.audio_features
             logger.info(
-                "Dropping stop flush buffer sid=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f active_s=%.2fs voiced_s=%.2fs silence=%.2f",
+                "Dropping stop flush buffer sid=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f density=%.2f active_s=%.2fs voiced_s=%.2fs silence=%.2f",
                 sid,
                 chunk_decision.reason,
                 chunk_decision.speech_gate_reason or "-",
@@ -486,6 +487,7 @@ def flush_pending_realtime_buffer(session, sid, *, force_finalize_segment=False)
                 features.peak if features else 0,
                 features.active_ratio if features else 0.0,
                 features.voiced_ratio if features else 0.0,
+                features.voiced_density if features else 0.0,
                 features.active_seconds if features else 0.0,
                 features.voiced_seconds if features else 0.0,
                 features.silence_ratio if features else 0.0,
@@ -569,7 +571,7 @@ def on_audio_stream(data):
         if chunk_decision.drop_buffer:
             features = chunk_decision.audio_features
             logger.info(
-                "Dropping realtime buffer sid=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f active_s=%.2fs voiced_s=%.2fs silence=%.2f",
+                "Dropping realtime buffer sid=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f density=%.2f active_s=%.2fs voiced_s=%.2fs silence=%.2f",
                 sid,
                 chunk_decision.reason,
                 chunk_decision.speech_gate_reason or "-",
@@ -579,6 +581,7 @@ def on_audio_stream(data):
                 features.peak if features else 0,
                 features.active_ratio if features else 0.0,
                 features.voiced_ratio if features else 0.0,
+                features.voiced_density if features else 0.0,
                 features.active_seconds if features else 0.0,
                 features.voiced_seconds if features else 0.0,
                 features.silence_ratio if features else 0.0,
