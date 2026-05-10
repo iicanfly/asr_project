@@ -585,7 +585,10 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
                 time: timeStr,
                 serverResultId: data.result_id || null,
                 segmentId: data.segment_id || null,
-                resultType: data.result_type || (data.is_final ? 'final' : 'partial')
+                resultType: data.result_type || (data.is_final ? 'final' : 'partial'),
+                stableText: data.stable_text || '',
+                mediumText: data.medium_text || '',
+                partialText: data.partial_text || ''
             };
         }
 
@@ -638,12 +641,31 @@ function rememberResultId(resultId) {
             return 'transcript-level-partial';
         }
 
-        function applyTranscriptLevelClass(messageDiv, resultType) {
+        function appendTranscriptLayer(contentDiv, className, text) {
+            if (!contentDiv || !text) return;
+            const span = document.createElement('span');
+            span.className = className;
+            span.innerText = text;
+            contentDiv.appendChild(span);
+        }
+
+        function renderTranscriptLayers(contentDiv, resultType, stableText = '', mediumText = '', partialText = '', fallbackText = '') {
+            if (!contentDiv) return;
+            contentDiv.innerHTML = '';
+            appendTranscriptLayer(contentDiv, 'transcript-level-high', stableText);
+            appendTranscriptLayer(contentDiv, 'transcript-level-medium', mediumText);
+            appendTranscriptLayer(contentDiv, 'transcript-level-partial', partialText);
+
+            if (!contentDiv.childNodes.length) {
+                appendTranscriptLayer(contentDiv, getTranscriptLevelClass(resultType), fallbackText);
+            }
+        }
+
+        function applyTranscriptLevelClass(messageDiv, resultType, stableText = '', mediumText = '', partialText = '', fallbackText = '') {
             if (!messageDiv) return;
             const contentDiv = messageDiv.querySelector('.message-content');
             if (!contentDiv) return;
-            contentDiv.classList.remove('transcript-level-partial', 'transcript-level-medium', 'transcript-level-high');
-            contentDiv.classList.add(getTranscriptLevelClass(resultType));
+            renderTranscriptLayers(contentDiv, resultType, stableText, mediumText, partialText, fallbackText);
             messageDiv.dataset.resultType = resultType || '';
         }
 
@@ -651,16 +673,14 @@ function rememberResultId(resultId) {
             return resultType === 'segment_rewrite' || resultType === 'medium_rewrite' || resultType === 'high_rewrite';
         }
 
-        function updateMessageUI(messageId, text, time, resultType = '') {
+        function updateMessageUI(messageId, text, time, resultType = '', stableText = '', mediumText = '', partialText = '') {
             const messageDiv = document.querySelector(`div[data-message-id="${messageId}"]`);
             if (!messageDiv) return false;
 
-            const contentDiv = messageDiv.querySelector('.message-content');
             const timeTag = messageDiv.querySelector('.time-tag');
 
-            if (contentDiv) contentDiv.innerText = text;
             if (timeTag) timeTag.innerText = time;
-            applyTranscriptLevelClass(messageDiv, resultType);
+            applyTranscriptLevelClass(messageDiv, resultType, stableText, mediumText, partialText, text);
             return true;
         }
 
@@ -700,9 +720,12 @@ function rememberResultId(resultId) {
             target.serverResultId = data.result_id || target.serverResultId;
             target.segmentId = data.segment_id || target.segmentId;
             target.resultType = data.result_type || target.resultType;
+            target.stableText = data.stable_text || '';
+            target.mediumText = data.medium_text || '';
+            target.partialText = data.partial_text || '';
             rememberResultId(data.result_id);
 
-            updateMessageUI(target.id, text, timeStr, target.resultType);
+            updateMessageUI(target.id, text, timeStr, target.resultType, target.stableText, target.mediumText, target.partialText);
             saveCache();
             document.getElementById('clear-btn').style.display = 'block';
             return true;
@@ -751,18 +774,41 @@ function handleASRResult(data) {
 
             if (shouldMerge && transcriptData.length > 0) {
                 const mergedText = mergeTranscriptText(lastEntry.content, text);
-                addMessageUI(data.speaker_id, text, timeStr, true, lastEntry.id, data.result_type);
+                addMessageUI(
+                    data.speaker_id,
+                    text,
+                    timeStr,
+                    true,
+                    lastEntry.id,
+                    data.result_type,
+                    data.stable_text || '',
+                    data.medium_text || '',
+                    data.partial_text || '',
+                );
                 lastEntry.content = mergedText;
                 lastEntry.time = timeStr;
                 lastEntry.serverResultId = data.result_id || lastEntry.serverResultId;
                 lastEntry.segmentId = data.segment_id || lastEntry.segmentId;
                 lastEntry.resultType = data.result_type || lastEntry.resultType;
+                lastEntry.stableText = data.stable_text || '';
+                lastEntry.mediumText = data.medium_text || '';
+                lastEntry.partialText = data.partial_text || '';
                 rememberResultId(data.result_id);
             } else {
                 // 生成唯一消息 ID
                 const messageId = ++messageIdCounter;
 
-                addMessageUI(data.speaker_id, text, timeStr, false, messageId, data.result_type);
+                addMessageUI(
+                    data.speaker_id,
+                    text,
+                    timeStr,
+                    false,
+                    messageId,
+                    data.result_type,
+                    data.stable_text || '',
+                    data.medium_text || '',
+                    data.partial_text || '',
+                );
                 transcriptData.push(buildTranscriptEntry(data, messageId, text, timeStr));
                 rememberResultId(data.result_id);
             }
@@ -775,18 +821,16 @@ function handleASRResult(data) {
             document.getElementById('clear-btn').style.display = 'block';
         }
 
-function addMessageUI(speaker, text, time, merge = false, messageId = null, resultType = '') {
+function addMessageUI(speaker, text, time, merge = false, messageId = null, resultType = '', stableText = '', mediumText = '', partialText = '') {
             const list = document.getElementById('transcript-list');
             const isSpeaker2 = speaker.includes('Speaker_2') || speaker.includes('2');
 
             if (merge && list.lastElementChild && list.lastElementChild.classList.contains('message')) {
                 // 合并到最后一个消息气泡
                 const lastMsg = list.lastElementChild;
-                const contentDiv = lastMsg.querySelector('.message-content');
-                contentDiv.innerText = mergeTranscriptText(contentDiv.innerText, text);
                 const timeTag = lastMsg.querySelector('.time-tag');
                 if (timeTag) timeTag.innerText = time;
-                applyTranscriptLevelClass(lastMsg, resultType);
+                applyTranscriptLevelClass(lastMsg, resultType, stableText, mediumText, partialText, text);
             } else {
                 // 新建消息气泡
                 const div = document.createElement('div');
@@ -801,10 +845,11 @@ function addMessageUI(speaker, text, time, merge = false, messageId = null, resu
                         <button class="message-action-btn" onclick="deleteMessage(${div.dataset.messageId})" title="删除">🗑️</button>
                     </div>
                     <span class="speaker-tag">${speaker}</span>
-                    <div class="message-content ${getTranscriptLevelClass(resultType)}">${text}</div>
+                    <div class="message-content"></div>
                     <span class="time-tag">${time}</span>
                 `;
                 div.dataset.resultType = resultType || '';
+                applyTranscriptLevelClass(div, resultType, stableText, mediumText, partialText, text);
                 list.appendChild(div);
             }
             list.scrollTop = list.scrollHeight;
@@ -1830,7 +1875,17 @@ function persistCacheNow() {
                             rememberMessageId(msgId);
                             d.id = msgId; // 确保数据有 ID
 
-                            addMessageUI(d.speaker, d.content, timeStr, false, msgId, d.resultType || '');
+                            addMessageUI(
+                                d.speaker,
+                                d.content,
+                                timeStr,
+                                false,
+                                msgId,
+                                d.resultType || '',
+                                d.stableText || '',
+                                d.mediumText || '',
+                                d.partialText || '',
+                            );
 
                             transcriptData.push(d);
                             lastSpeaker = d.speaker;

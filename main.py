@@ -373,6 +373,7 @@ def get_or_create_active_segment(session):
             "stage_duration_seconds": 0.0,
             "stable_text": "",
             "stage_display_text": "",
+            "last_medium_text": "",
             "last_result_id": None,
             "latest_display_text": "",
             "latest_result_type": None,
@@ -391,6 +392,9 @@ def build_realtime_result_payload(
     replace_target_id: str | None = None,
     result_type: str = "final_chunk",
     processing_reason: str | None = None,
+    stable_text: str = "",
+    medium_text: str = "",
+    partial_text: str = "",
 ):
     session['result_seq'] += 1
     chunk_seq = session.get('chunk_seq', 0)
@@ -406,6 +410,9 @@ def build_realtime_result_payload(
         "result_type": result_type,
         "processing_reason": processing_reason or chunk_decision.reason,
         "chunk_duration_seconds": round(chunk_decision.audio_duration_seconds, 3),
+        "stable_text": stable_text,
+        "medium_text": medium_text,
+        "partial_text": partial_text,
     }
 
 
@@ -436,6 +443,19 @@ def build_segment_display_text(active_segment, stage_text: str | None = None) ->
     return merge_transcript_fragments(stable_text, suffix_text)
 
 
+def build_display_layers(active_segment, result_type: str, *, stage_text: str = "", stable_override: str | None = None) -> tuple[str, str, str]:
+    stable_text = active_segment.get("stable_text", "") if stable_override is None else stable_override
+    if result_type == "high_rewrite":
+        return stable_text, "", ""
+    if result_type == "medium_rewrite":
+        return stable_text, stage_text, ""
+
+    medium_text = active_segment.get("last_medium_text", "")
+    if stage_text and medium_text and stage_text.startswith(medium_text):
+        return stable_text, medium_text, stage_text[len(medium_text):]
+    return stable_text, "", stage_text
+
+
 def should_emit_realtime_update(active_segment, display_text: str, result_type: str) -> bool:
     latest_display_text = active_segment.get("latest_display_text", "")
     latest_result_type = active_segment.get("latest_result_type")
@@ -450,6 +470,9 @@ def emit_realtime_display_update(
     display_text: str,
     result_type: str,
     processing_reason: str,
+    stable_text: str = "",
+    medium_text: str = "",
+    partial_text: str = "",
 ) -> bool:
     if not display_text:
         return False
@@ -471,6 +494,9 @@ def emit_realtime_display_update(
         replace_target_id=active_segment.get('last_result_id'),
         result_type=result_type,
         processing_reason=processing_reason,
+        stable_text=stable_text,
+        medium_text=medium_text,
+        partial_text=partial_text,
     )
     append_realtime_debug_trace("emit_asr_result", realtime_payload)
     emit("asr_result", realtime_payload)
@@ -485,6 +511,7 @@ def reset_active_stage(active_segment) -> None:
     active_segment['stage_chunk_count'] = 0
     active_segment['stage_duration_seconds'] = 0.0
     active_segment['stage_display_text'] = ""
+    active_segment['last_medium_text'] = ""
     active_segment['next_medium_rewrite_seconds'] = MEDIUM_REWRITE_SECONDS
 
 
@@ -528,6 +555,12 @@ def emit_stage_rewrite(
 
     if finalize_stage:
         committed_text = build_segment_display_text(active_segment, stage_text)
+        stable_text, medium_text, partial_text = build_display_layers(
+            active_segment,
+            result_type,
+            stage_text="",
+            stable_override=committed_text,
+        )
         emitted = emit_realtime_display_update(
             session,
             active_segment,
@@ -535,6 +568,9 @@ def emit_stage_rewrite(
             display_text=committed_text,
             result_type=result_type,
             processing_reason=processing_reason,
+            stable_text=stable_text,
+            medium_text=medium_text,
+            partial_text=partial_text,
         )
         active_segment['stable_text'] = committed_text
         reset_active_stage(active_segment)
@@ -552,6 +588,11 @@ def emit_stage_rewrite(
         return False
 
     combined_display_text = build_segment_display_text(active_segment, stage_text)
+    stable_text, medium_text, partial_text = build_display_layers(
+        active_segment,
+        result_type,
+        stage_text=stage_text,
+    )
     emitted = emit_realtime_display_update(
         session,
         active_segment,
@@ -559,8 +600,13 @@ def emit_stage_rewrite(
         display_text=combined_display_text,
         result_type=result_type,
         processing_reason=processing_reason,
+        stable_text=stable_text,
+        medium_text=medium_text,
+        partial_text=partial_text,
     )
     active_segment['stage_display_text'] = stage_text
+    if result_type == "medium_rewrite":
+        active_segment['last_medium_text'] = stage_text
     logger.info(
         "ASR rewrite emitted(segment=%s, type=%s, reason=%s, stage_duration=%.2fs, text=%s)",
         active_segment['segment_id'],
@@ -669,6 +715,11 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                 display_text_result,
             )
             combined_display_text = build_segment_display_text(active_segment, updated_stage_text)
+            stable_text, medium_text, partial_text = build_display_layers(
+                active_segment,
+                "segment_partial",
+                stage_text=updated_stage_text,
+            )
             if not should_emit_realtime_update(active_segment, combined_display_text, "segment_partial"):
                 logger.info(
                     "Skipping noop partial result(segment=%s, chunks=%s, text=%s)",
@@ -684,6 +735,9 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                     segment_id=active_segment['segment_id'],
                     replace_target_id=active_segment.get('last_result_id'),
                     result_type="segment_partial",
+                    stable_text=stable_text,
+                    medium_text=medium_text,
+                    partial_text=partial_text,
                 )
                 append_realtime_debug_trace("emit_asr_result", partial_payload)
                 emit("asr_result", partial_payload)

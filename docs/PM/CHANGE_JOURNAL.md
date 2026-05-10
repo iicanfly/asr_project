@@ -1101,4 +1101,17 @@
 - 后续动作：
   - 优先请用户实际录一段“重要约束”再看三种颜色是否按预期切换
   - 如果回写层级正常，再继续收紧 partial 文本拼接质量与标点细节
+## 2026-05-11 / 本轮：修正三级回写颜色被 partial 覆盖的问题
+- 主题：
+  - 修复“后续 partial 到来时，前面已经回写过的内容被整段刷成橙色”的前端显示错误。
+- 修改内容：
+  - main.py 新增 stable_text、medium_text、partial_text 三层文本字段。
+  - static/js/app.js 改为同一条消息内部按黑 / 蓝 / 橙 三层共存渲染，而不是整段统一染色。
+- 验证方式：
+  - node --check static/js/app.js
+  - conda run --no-capture-output -n asr python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio tests.test_realtime_tiered_rewrite
+- 当前结果：
+  - 自动化测试通过，颜色逻辑已经从“整段染色”改为“分层染色”。
+- 后续动作：
+  - 重启服务后请用户刷新网页，重点看 high 之后再来 partial 时，前面黑色部分是否仍保持黑色。
 
