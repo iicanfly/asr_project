@@ -9,8 +9,45 @@ from typing import Sequence
 
 
 DEFAULT_FILLER_WORDS = ("嗯", "啊", "呃", "额", "哦", "唔", "嘿", "咳", "呀", "哎", "诶", "欸", "哈")
-DEFAULT_ALLOWED_SHORT_PHRASES = ("好的", "可以", "收到", "是的", "谢谢", "你好", "行的", "没事", "对的")
+DEFAULT_ALLOWED_SHORT_PHRASES = ("好的", "可以", "收到", "是的", "行的", "没事", "对的")
+DEFAULT_LOW_INFORMATION_SEGMENTS = (
+    "嗯",
+    "啊",
+    "呃",
+    "额",
+    "哦",
+    "唔",
+    "嘿",
+    "咳",
+    "呀",
+    "哎",
+    "诶",
+    "欸",
+    "哈",
+    "你好",
+    "您好",
+    "谢谢",
+    "多谢",
+    "yes",
+    "yeah",
+    "yep",
+    "ok",
+    "okay",
+    "hello",
+    "hi",
+    "huh",
+    "uh",
+    "uhh",
+    "thanks",
+    "thank you",
+    "thankyou",
+    "what's that",
+    "whats that",
+    "was one",
+    "one",
+)
 BOUNDARY_PUNCTUATION = "，。！？、；：,.!?;:~… "
+SEGMENT_SPLIT_PUNCTUATION = "，。！？、；：,.!?;:~…"
 SENTENCE_END_PUNCTUATION = "。！？!?；;"
 CONTINUATION_ENDING_CHARS = set("的地得了着呢吗嘛吧啊呀呗么和与及并且而又在将把给让向对")
 
@@ -686,6 +723,103 @@ def _normalize_asr_text(text: str) -> str:
     return normalized
 
 
+def _normalize_information_segment(text: str) -> str:
+    normalized = _normalize_asr_text(text).casefold()
+    normalized = re.sub(rf"[{re.escape(BOUNDARY_PUNCTUATION)}]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _split_transcript_segments(text: str) -> list[str]:
+    normalized = _normalize_asr_text(text)
+    if not normalized:
+        return []
+    return [part.strip() for part in re.split(rf"[{re.escape(SEGMENT_SPLIT_PUNCTUATION)}]+", normalized) if part.strip()]
+
+
+def _join_transcript_segments(segments: Sequence[str]) -> str:
+    joined_parts: list[str] = []
+    for segment in segments:
+        cleaned_segment = _normalize_asr_text(segment)
+        if not cleaned_segment:
+            continue
+        if not joined_parts:
+            joined_parts.append(cleaned_segment)
+            continue
+
+        previous_segment = joined_parts[-1]
+        if _contains_cjk(previous_segment) and _contains_cjk(cleaned_segment):
+            joined_parts[-1] = previous_segment + cleaned_segment
+        elif previous_segment[-1].isalnum() and cleaned_segment[0].isalnum():
+            joined_parts.append(f" {cleaned_segment}")
+        else:
+            joined_parts.append(cleaned_segment)
+
+    return "".join(joined_parts).strip()
+
+
+def _is_low_information_segment(
+    text: str,
+    filler_words: Sequence[str] = DEFAULT_FILLER_WORDS,
+    low_information_segments: Sequence[str] = DEFAULT_LOW_INFORMATION_SEGMENTS,
+) -> bool:
+    normalized = _normalize_information_segment(text)
+    if not normalized:
+        return False
+
+    low_info_set = {_normalize_information_segment(segment) for segment in low_information_segments if segment.strip()}
+    if normalized in low_info_set:
+        return True
+
+    dense_text = collapse_transcript_text(normalized)
+    if not dense_text:
+        return True
+
+    filler_count = sum(dense_text.count(word) for word in filler_words)
+    if filler_count and filler_count >= max(1, len(dense_text) - 1):
+        return True
+
+    if len(dense_text) >= 3 and len(set(dense_text)) <= 2:
+        return True
+
+    if not _contains_cjk(normalized):
+        ascii_dense = re.sub(r"[^a-z0-9]", "", normalized)
+        if ascii_dense in {"ok", "okay", "yes", "yeah", "yep", "hi", "hello", "huh", "uh", "uhh", "thanks", "thankyou", "whatsthat", "wasone", "one"}:
+            return True
+        word_tokens = [token for token in normalized.split(" ") if token]
+        if word_tokens and len(word_tokens) <= 3 and all(token in {"yes", "yeah", "yep", "ok", "okay", "hello", "hi", "huh", "uh", "uhh", "thanks", "thank", "you", "what", "whats", "that", "was", "one"} for token in word_tokens):
+            return True
+
+    return False
+
+
+def _strip_low_information_segments(
+    text: str,
+    filler_words: Sequence[str] = DEFAULT_FILLER_WORDS,
+    low_information_segments: Sequence[str] = DEFAULT_LOW_INFORMATION_SEGMENTS,
+) -> tuple[str, int, int]:
+    cleaned_segments: list[str] = []
+    low_information_count = 0
+    meaningful_count = 0
+
+    for segment in _split_transcript_segments(text):
+        if _is_low_information_segment(
+            segment,
+            filler_words=filler_words,
+            low_information_segments=low_information_segments,
+        ):
+            low_information_count += 1
+            continue
+        cleaned_segments.append(segment)
+        meaningful_count += 1
+
+    return _join_transcript_segments(cleaned_segments), low_information_count, meaningful_count
+
+
 def collapse_transcript_text(text: str) -> str:
     return re.sub(rf"[{re.escape(BOUNDARY_PUNCTUATION)}\s]", "", _normalize_asr_text(text))
 
@@ -740,7 +874,11 @@ def refine_asr_result_text(
         refined = leading_pattern.sub("", refined).strip()
         refined = trailing_pattern.sub("", refined).strip()
         refined = refined.strip(BOUNDARY_PUNCTUATION).strip()
-    return refined
+
+    cleaned_text, _, meaningful_count = _strip_low_information_segments(refined, filler_words=filler_words)
+    if meaningful_count > 0 and cleaned_text:
+        refined = cleaned_text
+    return _normalize_asr_text(refined)
 
 
 def should_filter_asr_result(text: str, filler_words: Sequence[str] = DEFAULT_FILLER_WORDS) -> bool:
@@ -753,6 +891,15 @@ def should_filter_asr_result(text: str, filler_words: Sequence[str] = DEFAULT_FI
         return True
     if refined_text in DEFAULT_ALLOWED_SHORT_PHRASES:
         return False
+
+    cleaned_text, low_information_count, meaningful_count = _strip_low_information_segments(
+        refined_text,
+        filler_words=filler_words,
+    )
+    if meaningful_count == 0 and low_information_count > 0:
+        return True
+    if cleaned_text:
+        refined_text = cleaned_text
 
     dense_text = collapse_transcript_text(refined_text)
     if not dense_text:

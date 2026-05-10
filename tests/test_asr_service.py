@@ -224,6 +224,8 @@ class FilterResultTests(unittest.TestCase):
         self.assertTrue(should_filter_asr_result("嗯"))
         self.assertTrue(should_filter_asr_result("嗯啊"))
         self.assertTrue(should_filter_asr_result("哈"))
+        self.assertTrue(should_filter_asr_result("你好"))
+        self.assertTrue(should_filter_asr_result("谢谢"))
 
     def test_keeps_normal_sentence(self):
         self.assertFalse(should_filter_asr_result("今天下午两点开会"))
@@ -239,6 +241,20 @@ class FilterResultTests(unittest.TestCase):
         self.assertFalse(should_filter_asr_result("好的"))
         self.assertFalse(should_filter_asr_result("可以"))
         self.assertFalse(should_filter_asr_result("那个我们开始吧"))
+
+    def test_filters_low_information_hallucination_sequence(self):
+        self.assertTrue(
+            should_filter_asr_result("What's that?Was one.one。嗯。嗯。Huh.嗯。Yes.你好。Yeah。Thank you。嗯。")
+        )
+
+    def test_strips_low_information_segments_but_keeps_meaningful_sentence(self):
+        self.assertEqual(
+            refine_asr_result_text("Yeah. Thank you. 嗯。现在我看这个静音。并没有被过滤掉。嗯。"),
+            "现在我看这个静音并没有被过滤掉",
+        )
+        self.assertFalse(
+            should_filter_asr_result("Yeah. Thank you. 嗯。现在我看这个静音。并没有被过滤掉。嗯。")
+        )
 
 
 class TranscriptTextHeuristicTests(unittest.TestCase):

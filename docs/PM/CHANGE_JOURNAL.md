@@ -118,6 +118,28 @@
 
 ### 2026-05-10 / Commit 待填写
 - 主题：
+  - 为静音场景补上低信息幻觉短句拦截。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增低信息片段识别与整句清洗逻辑。
+  - 对 `嗯 / 啊 / yeah / yes / huh / thank you / 你好 / 谢谢 / what's that` 等中英混合幻觉短句做发送前拦截。
+  - 调整短句白名单，降低“你好 / 谢谢”在静音阶段被误发到前端的概率。
+  - 在 `tests/test_asr_service.py` 中新增“整句低信息幻觉串过滤”和“混合句保留有效内容”的回归用例。
+- 目的：
+  - 解决用户实测中“完全不说话也会刷出一串嗯 / Yeah / Thank you / 你好”的问题。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_asr_service.py"`
+  - `python -m unittest discover -s .\tests -p "test_*.py"`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py`
+  - `python tools/check_doc_corruption.py`
+- 当前结果：
+  - 自动化层面已能识别并过滤典型静音幻觉词串，同时保留混合句中的有效中文内容。
+- 用户反馈：
+  - 用户已明确反馈当前版本“什么都没说也会输出一堆嗯”，本轮正是针对该问题修复。
+- 后续动作：
+  - 继续做真实麦克风回归，观察是否还存在未覆盖的英文碎词幻觉样式。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
   - 实时转写第三轮：小段结果到大段结果的替换回写最小闭环。
 - 修改内容：
   - 在 `services/asr_service.py` 中新增 `SegmentRewritePolicy`、`SegmentRewriteDecision` 与 `decide_segment_rewrite()`，把段级回写触发条件抽成可测试规则。
