@@ -971,3 +971,38 @@
 - 后续动作：
   - 让用户重启服务并强刷页面后，用同类长句再次回归；
   - 同时重点观察终端里新的 `ASR partial emitted / Discarding leading filtered realtime segment` 日志。
+
+### 2026-05-10 / Commit 待提交
+- 主题：
+  - 增加“当前运行版本”和“实时事件回放”调试出口，避免再靠肉眼猜前后端链路。
+- 修改内容：
+  - 在 `main.py` 中新增：
+    - `get_app_js_version()`
+    - `get_git_head_short()`
+    - `REALTIME_DEBUG_TRACE`
+    - `append_realtime_debug_trace()`
+  - 扩展 `/api/v1/debug/status`，增加：
+    - `app_js_version`
+    - `git_head`
+    - `realtime_trace_count`
+  - 新增 `/api/v1/debug/realtime_trace`，用于直接查看后端最近发出的 `segment_partial / segment_rewrite / filtered_result / asr_error` 等事件。
+  - `templates/index.html` 注入 `window.__APP_JS_VERSION__`，并输出控制台日志 `APP_JS_VERSION`。
+  - 通过 Playwright 实测确认：
+    - 当前用户正在测的 `22:23` 这轮服务，页面里**还没有**新版版本参数；
+    - 说明那次测试跑的仍是旧进程，不是刚改完的最新代码。
+- 目的：
+  - 把“当前浏览器到底加载了哪版 JS”“后端到底发了哪些回写事件”变成可直接查询的事实。
+- 验证方式：
+  - `conda run --no-capture-output -n asr python -m py_compile main.py`
+  - Flask `test_client()` 校验：
+    - `/api/v1/debug/status`
+    - `/api/v1/debug/realtime_trace`
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+  - Playwright `snapshot / console / eval` 实测页面与脚本加载状态。
+- 当前结果：
+  - 已能明确区分“代码已改但服务没重启”与“服务已重启但功能仍错”这两类情况。
+- 用户反馈：
+  - 用户明确质疑 browser 插件不可用，并要求更真实地验证前端功能。
+- 后续动作：
+  - 让用户在**重启到最新进程后**再测一遍；
+  - 然后直接读取 `/api/v1/debug/realtime_trace` 判断回写事件有没有真正到达后端发射层。

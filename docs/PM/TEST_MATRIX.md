@@ -275,3 +275,20 @@
     - `ASR result filtered(...)`
     - `Discarding leading filtered realtime segment ...`
   - 若前导 `嗯/啊` 被丢弃，则首次真正有意义的 rewrite 应更早发生。
+
+### 2026-05-10 / 运行版本与实时 trace 调试补充
+- 自动化补充检查：
+  - Flask `test_client()` 应能成功访问：
+    - `/api/v1/debug/status`
+    - `/api/v1/debug/realtime_trace`
+- 手工补充检查：
+  - 重启服务后，访问 `/api/v1/debug/status` 时应看到新的：
+    - `app_js_version`
+    - `git_head`
+    - `realtime_trace_count`
+  - 录音后访问 `/api/v1/debug/realtime_trace`，确认是否出现：
+    - `segment_partial`
+    - `segment_rewrite`
+    - `filtered_result`
+    - `discard_leading_filtered_segment`
+  - 如果 trace 中存在 `segment_rewrite`，而页面仍只显示碎片，则优先判定为前端展示链路问题，而不是后端未触发回写。

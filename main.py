@@ -4,12 +4,14 @@ from flask import Flask, render_template, request, jsonify, send_file, send_from
 from flask_socketio import SocketIO, emit
 from openai import OpenAI
 from docx import Document
+from collections import deque
 from datetime import datetime
 import logging
 import os
 import io
 import json
 import re
+import subprocess
 import time
 import threading
 import config
@@ -54,12 +56,53 @@ EXPORT_DIR = config.EXPORT_DIR
 for d in [TEMP_DIR, EXPORT_DIR]:
     os.makedirs(d, exist_ok=True)
 
+REALTIME_DEBUG_TRACE = deque(maxlen=200)
+
 
 def env_flag(name: str, default: bool = False) -> bool:
     raw_value = os.getenv(name)
     if raw_value is None:
         return default
     return str(raw_value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_app_js_version() -> int:
+    app_js_path = os.path.join(app.static_folder or "static", "js", "app.js")
+    try:
+        return int(os.path.getmtime(app_js_path))
+    except OSError:
+        return int(time.time())
+
+
+def append_realtime_debug_trace(event_type: str, payload: dict) -> None:
+    trace_payload = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "event_type": event_type,
+        "result_id": payload.get("result_id"),
+        "result_type": payload.get("result_type"),
+        "segment_id": payload.get("segment_id"),
+        "replace_target_id": payload.get("replace_target_id"),
+        "processing_reason": payload.get("processing_reason"),
+        "text": payload.get("text"),
+    }
+    REALTIME_DEBUG_TRACE.append(trace_payload)
+
+
+def get_git_head_short() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+    except Exception:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
 
 def remove_markdown_formatting(text: str) -> str:
     if not text:
@@ -191,12 +234,7 @@ DOC_PROMPTS = {
 
 @app.route("/")
 def index():
-    app_js_path = os.path.join(app.static_folder or "static", "js", "app.js")
-    try:
-        app_js_version = int(os.path.getmtime(app_js_path))
-    except OSError:
-        app_js_version = int(time.time())
-    return render_template("index.html", app_js_version=app_js_version)
+    return render_template("index.html", app_js_version=get_app_js_version())
 
 
 @app.route("/logo.jpeg")
@@ -211,7 +249,18 @@ def get_status():
         "mode": "intranet" if config.USE_INTRANET else "online",
         "asr_model": config.ASR_MODEL,
         "llm_model": config.LLM_MODEL,
-        "base_url": config.BASE_URL
+        "base_url": config.BASE_URL,
+        "app_js_version": get_app_js_version(),
+        "git_head": get_git_head_short(),
+        "realtime_trace_count": len(REALTIME_DEBUG_TRACE),
+    })
+
+
+@app.route("/api/v1/debug/realtime_trace")
+def get_realtime_trace():
+    return jsonify({
+        "count": len(REALTIME_DEBUG_TRACE),
+        "events": list(REALTIME_DEBUG_TRACE),
     })
 
 
@@ -398,6 +447,7 @@ def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision,
                     replace_target_id=active_segment['last_result_id'],
                     result_type="segment_rewrite",
                 )
+                append_realtime_debug_trace("emit_asr_result", rewrite_payload)
                 emit("asr_result", rewrite_payload)
                 active_segment['last_result_id'] = rewrite_payload["result_id"]
                 logger.info(
@@ -484,6 +534,7 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                     segment_id=active_segment['segment_id'],
                     result_type="segment_partial",
                 )
+                append_realtime_debug_trace("emit_asr_result", partial_payload)
                 emit("asr_result", partial_payload)
                 active_segment['last_result_id'] = partial_payload["result_id"]
                 active_segment['latest_display_text'] = refined_text_result
@@ -501,6 +552,15 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                 text_result[:50],
                 refined_text_result[:50] if refined_text_result else "",
             )
+            append_realtime_debug_trace(
+                "filtered_result",
+                {
+                    "result_type": "filtered_result",
+                    "segment_id": active_segment['segment_id'],
+                    "processing_reason": chunk_decision.reason,
+                    "text": refined_text_result or text_result,
+                },
+            )
             if not active_segment.get('last_result_id'):
                 logger.info(
                     "Discarding leading filtered realtime segment sid=%s segment=%s chunks=%s duration=%.2fs raw=%s refined=%s",
@@ -510,6 +570,15 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                     active_segment['duration_seconds'],
                     text_result[:50],
                     refined_text_result[:50] if refined_text_result else "",
+                )
+                append_realtime_debug_trace(
+                    "discard_leading_filtered_segment",
+                    {
+                        "result_type": "discard_leading_filtered_segment",
+                        "segment_id": active_segment['segment_id'],
+                        "processing_reason": chunk_decision.reason,
+                        "text": refined_text_result or text_result,
+                    },
                 )
                 session['active_segment'] = None
                 return
@@ -523,8 +592,10 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
             force_reason="stop_recording_finalize_segment" if finalize_after_processing else "",
         )
     except Exception as e:
-        logger.exception(f"ASR API 调用失败: {e}")
-        emit("asr_error", {"message": "实时转写失败，请稍后重试。"})
+        logger.exception(f"ASR API call failed: {e}")
+        error_payload = {"message": "?????????????"}
+        append_realtime_debug_trace("emit_asr_error", error_payload)
+        emit("asr_error", error_payload)
     finally:
         session['processing'] = False
 
@@ -707,7 +778,9 @@ def on_audio_stream(data):
     session = session_mgr.get_or_create(sid)
 
     if not isinstance(data, bytes):
-        emit("asr_result", {"speaker_id": "System", "text": "[数据格式错误]", "is_final": False})
+        format_error_payload = {"speaker_id": "System", "text": "[数据格式错误]", "is_final": False}
+        append_realtime_debug_trace("emit_asr_result", format_error_payload)
+        emit("asr_result", format_error_payload)
         return
 
     fh = session['file_handle']
