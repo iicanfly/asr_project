@@ -22,6 +22,10 @@ def pcm_window(value: int, sample_count: int) -> bytes:
     return b"".join(value.to_bytes(2, "little", signed=True) for _ in range(sample_count))
 
 
+def pcm_frames(frame_values, frame_size: int = 256) -> bytes:
+    return b"".join(pcm_window(value, frame_size) for value in frame_values)
+
+
 class DetectSilenceTests(unittest.TestCase):
     def test_silence_window_is_detected(self):
         silent_audio = pcm_window(0, 2048)
@@ -35,7 +39,7 @@ class DetectSilenceTests(unittest.TestCase):
 class ChunkDecisionTests(unittest.TestCase):
     def test_long_audio_forces_processing(self):
         policy = RealtimeChunkPolicy(max_audio_seconds=1.0)
-        audio_data = pcm_window(200, 16000 * 2)
+        audio_data = pcm_window(320, 16000 * 2)
         decision = decide_chunk_processing(audio_data, policy)
         self.assertTrue(decision.should_process)
         self.assertEqual(decision.reason, "max_duration_reached")
@@ -98,6 +102,26 @@ class AudioFeatureTests(unittest.TestCase):
         features = extract_audio_features(weak_audio)
         self.assertFalse(has_usable_speech(features, policy))
         self.assertTrue(is_weak_background_audio(features, policy))
+
+    def test_active_noise_without_voiced_presence_is_not_usable_speech(self):
+        policy = RealtimeChunkPolicy(chunk_seconds=1.0)
+        noisy_audio = pcm_window(150, 16000 * 2)
+        features = extract_audio_features(noisy_audio)
+        self.assertFalse(has_usable_speech(features, policy))
+
+        decision = decide_chunk_processing(noisy_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertTrue(decision.drop_buffer)
+        self.assertEqual(decision.reason, "drop_weak_audio_at_chunk_duration")
+
+    def test_sustained_soft_speech_still_counts_as_usable(self):
+        policy = RealtimeChunkPolicy()
+        soft_speech_audio = pcm_frames(([240] * 22) + ([320] * 8) + ([0] * 120))
+        features = extract_audio_features(soft_speech_audio)
+
+        self.assertGreaterEqual(features.active_ratio, policy.min_active_ratio)
+        self.assertLess(features.voiced_ratio, policy.min_voiced_ratio)
+        self.assertTrue(has_usable_speech(features, policy))
 
 
 class FilterResultTests(unittest.TestCase):

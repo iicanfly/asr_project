@@ -379,6 +379,19 @@
 - 作用：
   - 统一管理实时转写的切片触发判断，避免阈值和静音逻辑散落在 `main.py` 中。
 
+### `services/asr_service.py:has_usable_speech(features, policy)`
+- 输入：
+  - `AudioFeatures`
+  - `RealtimeChunkPolicy`
+- 输出：
+  - `bool`
+- 作用：
+  - 统一判断一段音频是否值得进入 ASR。
+  - 当前不再允许 `active_ratio` 单独放行，而是改为综合“强信号”“持续有声”“持续柔和语音”三类条件。
+- 当前约束：
+  - 对更长的缓冲，函数会要求更高的最小有声 / 活跃持续时长。
+  - 对较短尾音，仍保留较低兜底门槛，避免 stop flush 场景误丢最后一句。
+
 ### `services/asr_service.py:refine_asr_result_text(text, filler_words=...)`
 - 输入：
   - `text: str`

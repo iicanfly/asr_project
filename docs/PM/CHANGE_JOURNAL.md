@@ -313,3 +313,26 @@
   - 待明早真实长录音与缓存恢复场景测试确认。
 - 后续动作：
   - 继续关注 localStorage 受限场景下，是否还存在未覆盖的读取入口或提示不够清晰的问题。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十二轮：静音过滤 / 弱语音第二轮门槛细化。
+- 修改内容：
+  - 在 `services/asr_service.py` 的 `RealtimeChunkPolicy` 中新增“最小活跃时长 / 最小有声时长 / 弱语音活跃阈值”相关参数。
+  - 为 `AudioFeatures` 增加 `active_seconds` 与 `voiced_seconds` 派生信息，并新增 `_adaptive_presence_seconds()`。
+  - `has_usable_speech()` 不再让 `active_ratio` 单独放行，而是改为“强信号”或“持续有声”或“持续弱语音但带一定有声占比”三段式判定。
+  - 在 `tests/test_asr_service.py` 中补充“持续活跃但无有声的噪声应被丢弃”与“持续柔和语音仍应保留”的自动化测试。
+- 目的：
+  - 进一步压制“旁边人小声说话 / 活跃噪声”误进入实时转写的问题。
+  - 同时保留对真实弱语音的容忍度，避免因为降噪过猛而误杀主说话人。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 单靠 `active_ratio` 升高、但几乎没有有声特征的缓冲，不会再被当成可转写语音直接放行。
+  - 具有一定持续时长与少量有声支撑的柔和主语音，仍可通过新的弱语音兜底通道。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续结合真实录音日志，观察 `rms / peak / active / voiced` 与主观听感是否一致。

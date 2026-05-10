@@ -31,6 +31,10 @@ class RealtimeChunkPolicy:
     speech_peak_threshold: int = 280
     min_active_ratio: float = 0.12
     min_voiced_ratio: float = 0.08
+    min_active_seconds: float = 0.75
+    min_voiced_seconds: float = 0.4
+    active_speech_rms_threshold: float = 0.0032
+    active_speech_peak_threshold: int = 220
     weak_audio_rms_threshold: float = 0.0022
     weak_audio_peak_threshold: int = 180
     strong_silence_ratio_threshold: float = 0.92
@@ -45,6 +49,14 @@ class AudioFeatures:
     voiced_ratio: float
     silence_ratio: float
     frame_count: int
+
+    @property
+    def active_seconds(self) -> float:
+        return self.active_ratio * self.duration_seconds
+
+    @property
+    def voiced_seconds(self) -> float:
+        return self.voiced_ratio * self.duration_seconds
 
 
 @dataclass(frozen=True)
@@ -219,12 +231,45 @@ def extract_audio_features(
     )
 
 
+def _adaptive_presence_seconds(
+    duration_seconds: float,
+    *,
+    cap_seconds: float,
+    ratio_floor: float,
+    minimum_floor: float,
+) -> float:
+    return min(cap_seconds, max(minimum_floor, duration_seconds * ratio_floor))
+
+
 def has_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:
-    return (
-        features.active_ratio >= policy.min_active_ratio
-        or features.voiced_ratio >= policy.min_voiced_ratio
-        or (features.rms >= policy.speech_rms_threshold and features.peak >= policy.speech_peak_threshold)
+    if features.duration_seconds <= 0:
+        return False
+
+    strong_signal = features.rms >= policy.speech_rms_threshold and features.peak >= policy.speech_peak_threshold
+    required_voiced_seconds = _adaptive_presence_seconds(
+        features.duration_seconds,
+        cap_seconds=policy.min_voiced_seconds,
+        ratio_floor=0.08,
+        minimum_floor=0.12,
     )
+    required_active_seconds = _adaptive_presence_seconds(
+        features.duration_seconds,
+        cap_seconds=policy.min_active_seconds,
+        ratio_floor=0.18,
+        minimum_floor=0.24,
+    )
+    sustained_voiced = (
+        features.voiced_ratio >= policy.min_voiced_ratio
+        and features.voiced_seconds >= required_voiced_seconds
+    )
+    sustained_active_speech = (
+        features.active_ratio >= policy.min_active_ratio
+        and features.active_seconds >= required_active_seconds
+        and features.rms >= policy.active_speech_rms_threshold
+        and features.peak >= policy.active_speech_peak_threshold
+        and features.voiced_ratio >= (policy.min_voiced_ratio * 0.5)
+    )
+    return strong_signal or sustained_voiced or sustained_active_speech
 
 
 def is_weak_background_audio(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:

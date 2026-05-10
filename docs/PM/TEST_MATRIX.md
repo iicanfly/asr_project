@@ -85,3 +85,11 @@
   - 如果浏览器环境限制 `localStorage.getItem()`，页面初始化不应直接白屏或中断脚本。
   - 在缓存读取失败时，`cache-info` 应显示“缓存受限”类提示，而不是静默失败。
   - 离线补偿检测、缓存恢复、历史文档恢复在读取失败时都应允许页面继续使用其它核心功能。
+
+### 2026-05-10 / 静音过滤第二轮自动化补充
+- 自动化补充检查：
+  - “持续活跃但无足够有声占比”的噪声样本，应被 `has_usable_speech()` 判为不可用，并在达到 chunk 时长后被丢弃。
+  - “持续柔和但真实”的弱语音样本，即使 `voiced_ratio` 略低于常规阈值，也应能通过弱语音兜底路径保留。
+- 本轮已新增：
+  - `tests/test_asr_service.py::test_active_noise_without_voiced_presence_is_not_usable_speech`
+  - `tests/test_asr_service.py::test_sustained_soft_speech_still_counts_as_usable`
