@@ -442,3 +442,25 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 明早优先补采或筛出一批“旁边人小声插话 / 低音量背景说话”的真实样本，再用该工具回放校准门槛。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十八轮：门槛环境变量覆盖。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `load_realtime_chunk_policy_overrides()`，支持从环境变量覆盖 `RealtimeChunkPolicy` 各项门槛。
+  - 支持两级配置：通用 `REALTIME_*`，以及按环境区分的 `ONLINE_REALTIME_*` / `INTRANET_REALTIME_*`，其中环境专属优先级更高。
+  - `main.py` 启动时会应用覆盖后的实时门槛，并在存在覆盖时输出日志。
+  - 在 `tests/test_asr_service.py` 中新增环境覆盖的自动化测试，验证通用覆盖与环境专属覆盖优先级。
+- 目的：
+  - 让外网调试和内网部署可以分别校准实时转写门槛，而不必每次都改代码重新提交。
+  - 降低明早根据真实录音反复微调阈值时的操作成本。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 实时门槛现在既能全局覆盖，也能按内外网分别覆盖，双环境调参路径更清晰。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 明早如需试阈值，优先先改 `.env` 中对应 `ONLINE_REALTIME_*` 项，再结合离线回放与真实页面效果校准。

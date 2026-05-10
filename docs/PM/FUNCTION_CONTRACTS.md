@@ -429,6 +429,18 @@
 - 作用：
   - 表示“有声帧在活跃帧中的占比”，用于区分“持续柔和主语音”与“活跃但有声很稀的噪声”。
 
+### `services/asr_service.py:load_realtime_chunk_policy_overrides(base_policy, env, mode_prefix=None)`
+- 输入：
+  - `base_policy: RealtimeChunkPolicy`
+  - `env: Mapping[str, str]`
+  - `mode_prefix`：如 `ONLINE` / `INTRANET`
+- 输出：
+  - `(policy, overrides)` 二元组
+- 作用：
+  - 从环境变量加载实时转写门槛覆盖，并返回实际生效的策略与覆盖项字典。
+- 当前约束：
+  - 环境专属前缀（如 `ONLINE_REALTIME_*`）优先于通用 `REALTIME_*`。
+
 ### `services/asr_service.py:refine_asr_result_text(text, filler_words=...)`
 - 输入：
   - `text: str`

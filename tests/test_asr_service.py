@@ -6,6 +6,7 @@ from services.asr_service import (
     describe_usable_speech,
     extract_audio_features,
     has_tail_triggerable_speech,
+    load_realtime_chunk_policy_overrides,
     is_effective_text_update,
     looks_like_sentence_boundary,
     RealtimeChunkPolicy,
@@ -102,6 +103,33 @@ class ChunkDecisionTests(unittest.TestCase):
         decision = decide_stop_flush(tail_audio, policy)
         self.assertFalse(decision.should_process)
         self.assertEqual(decision.reason, "stop_flush_below_min_duration")
+
+
+class RealtimePolicyOverrideTests(unittest.TestCase):
+    def test_loads_global_realtime_policy_overrides(self):
+        policy, overrides = load_realtime_chunk_policy_overrides(
+            RealtimeChunkPolicy(),
+            {
+                "REALTIME_CHUNK_SECONDS": "6.5",
+                "REALTIME_MIN_VOICED_DENSITY_FOR_SOFT_SPEECH": "0.32",
+            },
+        )
+        self.assertEqual(policy.chunk_seconds, 6.5)
+        self.assertEqual(policy.min_voiced_density_for_soft_speech, 0.32)
+        self.assertEqual(overrides["chunk_seconds"], 6.5)
+        self.assertEqual(overrides["min_voiced_density_for_soft_speech"], 0.32)
+
+    def test_mode_specific_override_beats_global_override(self):
+        policy, overrides = load_realtime_chunk_policy_overrides(
+            RealtimeChunkPolicy(),
+            {
+                "REALTIME_CHUNK_SECONDS": "7.0",
+                "ONLINE_REALTIME_CHUNK_SECONDS": "4.0",
+            },
+            mode_prefix="online",
+        )
+        self.assertEqual(policy.chunk_seconds, 4.0)
+        self.assertEqual(overrides["chunk_seconds"], 4.0)
 
 
 class AudioFeatureTests(unittest.TestCase):

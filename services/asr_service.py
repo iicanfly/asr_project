@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import re
 from dataclasses import dataclass
+from dataclasses import replace
+from typing import Mapping
 from typing import Sequence
 
 
@@ -96,6 +98,68 @@ class SegmentRewriteDecision:
     should_emit_rewrite: bool
     should_finalize_segment: bool
     reason: str
+
+
+REALTIME_POLICY_PARSERS = {
+    "min_audio_seconds": float,
+    "max_audio_seconds": float,
+    "chunk_seconds": float,
+    "stop_flush_min_seconds": float,
+    "min_speech_frames": int,
+    "tail_silence_bytes": int,
+    "sample_rate": int,
+    "bytes_per_sample": int,
+    "frame_size": int,
+    "silence_threshold": float,
+    "peak_threshold": int,
+    "silence_ratio_threshold": float,
+    "speech_rms_threshold": float,
+    "speech_peak_threshold": int,
+    "min_active_ratio": float,
+    "min_voiced_ratio": float,
+    "min_active_seconds": float,
+    "min_voiced_seconds": float,
+    "active_speech_rms_threshold": float,
+    "active_speech_peak_threshold": int,
+    "min_voiced_density_for_soft_speech": float,
+    "tail_trigger_min_active_seconds": float,
+    "tail_trigger_min_voiced_seconds": float,
+    "weak_audio_rms_threshold": float,
+    "weak_audio_peak_threshold": int,
+    "strong_silence_ratio_threshold": float,
+}
+
+
+def load_realtime_chunk_policy_overrides(
+    base_policy: RealtimeChunkPolicy,
+    env: Mapping[str, str],
+    *,
+    mode_prefix: str | None = None,
+) -> tuple[RealtimeChunkPolicy, dict[str, float | int]]:
+    updates: dict[str, float | int] = {}
+    normalized_prefix = (mode_prefix or "").strip().upper()
+
+    for field_name, parser in REALTIME_POLICY_PARSERS.items():
+        env_suffix = field_name.upper()
+        candidate_keys = []
+        if normalized_prefix:
+            candidate_keys.append(f"{normalized_prefix}_REALTIME_{env_suffix}")
+        candidate_keys.append(f"REALTIME_{env_suffix}")
+
+        raw_value = None
+        for key in candidate_keys:
+            if key in env and str(env[key]).strip():
+                raw_value = str(env[key]).strip()
+                break
+
+        if raw_value is None:
+            continue
+
+        updates[field_name] = parser(raw_value)
+
+    if not updates:
+        return base_policy, {}
+    return replace(base_policy, **updates), updates
 
 
 def add_wav_header(

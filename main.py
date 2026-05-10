@@ -18,6 +18,7 @@ from services.asr_service import (
     SegmentRewritePolicy,
     add_wav_header,
     is_effective_text_update,
+    load_realtime_chunk_policy_overrides,
     decide_chunk_processing,
     decide_segment_rewrite,
     decide_stop_flush,
@@ -196,11 +197,16 @@ def get_status():
     })
 
 
-REALTIME_CHUNK_POLICY = RealtimeChunkPolicy(
+DEFAULT_REALTIME_CHUNK_POLICY = RealtimeChunkPolicy(
     min_audio_seconds=1.0,
     max_audio_seconds=30.0,
     chunk_seconds=10.0,
     min_speech_frames=100,
+)
+REALTIME_CHUNK_POLICY, REALTIME_CHUNK_POLICY_OVERRIDES = load_realtime_chunk_policy_overrides(
+    DEFAULT_REALTIME_CHUNK_POLICY,
+    os.environ,
+    mode_prefix="INTRANET" if config.USE_INTRANET else "ONLINE",
 )
 SEGMENT_REWRITE_POLICY = SegmentRewritePolicy()
 
@@ -845,6 +851,8 @@ if __name__ == "__main__":
     logger.info(f"启动服务器: {config.HOST}:{config.PORT}")
     logger.info(f"运行模式: {'内网' if config.USE_INTRANET else '外网开发'}")
     logger.info(f"ASR 模型: {config.ASR_MODEL}, LLM 模型: {config.LLM_MODEL}")
+    if REALTIME_CHUNK_POLICY_OVERRIDES:
+        logger.info("实时转写门槛环境覆盖: %s", REALTIME_CHUNK_POLICY_OVERRIDES)
 
     ssl_context = None
     if config.ENABLE_HTTPS:

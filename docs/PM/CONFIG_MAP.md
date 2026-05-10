@@ -195,3 +195,24 @@
 - LLM 路径基本通过一套 OpenAI 兼容客户端抽象完成。
 - ASR 路径才是内外网差异最大的地方，后续修改时优先保护。
 - 所有优化实时转写的改动，都应先检查是否会影响 `ASR_MODE` 分流逻辑。
+
+## 2026-05-10 / 实时转写门槛覆盖补充
+### 通用实时门槛覆盖
+- 前缀：
+  - `REALTIME_`
+- 示例：
+  - `REALTIME_CHUNK_SECONDS`
+  - `REALTIME_MIN_ACTIVE_RATIO`
+  - `REALTIME_MIN_VOICED_DENSITY_FOR_SOFT_SPEECH`
+- 作用：
+  - 覆盖 `RealtimeChunkPolicy` 的默认值，适合做全局调参。
+
+### 环境专属实时门槛覆盖
+- 外网前缀：
+  - `ONLINE_REALTIME_`
+- 内网前缀：
+  - `INTRANET_REALTIME_`
+- 优先级：
+  - 环境专属覆盖优先于通用 `REALTIME_`。
+- 作用：
+  - 允许外网和内网在不改代码的前提下使用不同的实时转写门槛。
