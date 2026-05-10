@@ -479,6 +479,18 @@ def looks_like_sentence_boundary(text: str, *, min_chars: int = 6) -> bool:
     return dense_text[-1] not in CONTINUATION_ENDING_CHARS
 
 
+def is_effective_text_update(previous_text: str, new_text: str) -> bool:
+    previous_refined = refine_asr_result_text(previous_text)
+    new_refined = refine_asr_result_text(new_text)
+
+    if not new_refined:
+        return False
+    if not previous_refined:
+        return True
+
+    return collapse_transcript_text(previous_refined) != collapse_transcript_text(new_refined)
+
+
 def refine_asr_result_text(
     text: str,
     filler_words: Sequence[str] = DEFAULT_FILLER_WORDS,

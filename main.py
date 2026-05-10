@@ -17,6 +17,7 @@ from services.asr_service import (
     RealtimeChunkPolicy,
     SegmentRewritePolicy,
     add_wav_header,
+    is_effective_text_update,
     decide_chunk_processing,
     decide_segment_rewrite,
     decide_stop_flush,
@@ -332,26 +333,35 @@ def emit_segment_rewrite_if_needed(session, sid, active_segment, chunk_decision,
         segment_text_result = transcribe_realtime_chunk(bytes(active_segment['audio_buffer']))
         refined_segment_text = refine_asr_result_text(segment_text_result)
         if refined_segment_text and not should_filter_asr_result(refined_segment_text):
-            rewrite_payload = build_realtime_result_payload(
-                session,
-                refined_segment_text,
-                chunk_decision,
-                segment_id=active_segment['segment_id'],
-                replace_target_id=active_segment['last_result_id'],
-                result_type="segment_rewrite",
-            )
-            emit("asr_result", rewrite_payload)
-            active_segment['last_result_id'] = rewrite_payload["result_id"]
+            if not is_effective_text_update(active_segment.get('latest_display_text', ''), refined_segment_text):
+                active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
+                logger.info(
+                    "Skipping noop segment rewrite(segment=%s, reason=%s, chunks=%s)",
+                    active_segment['segment_id'],
+                    rewrite_reason,
+                    active_segment['chunk_count'],
+                )
+            else:
+                rewrite_payload = build_realtime_result_payload(
+                    session,
+                    refined_segment_text,
+                    chunk_decision,
+                    segment_id=active_segment['segment_id'],
+                    replace_target_id=active_segment['last_result_id'],
+                    result_type="segment_rewrite",
+                )
+                emit("asr_result", rewrite_payload)
+                active_segment['last_result_id'] = rewrite_payload["result_id"]
+                logger.info(
+                    "ASR 段级回写成功(segment=%s, reason=%s, chunks=%s, duration=%.2fs, text=%s)",
+                    active_segment['segment_id'],
+                    rewrite_reason,
+                    active_segment['chunk_count'],
+                    active_segment['duration_seconds'],
+                    refined_segment_text[:50],
+                )
             active_segment['last_rewrite_chunk_count'] = active_segment['chunk_count']
             active_segment['latest_display_text'] = refined_segment_text
-            logger.info(
-                "ASR 段级回写成功(segment=%s, reason=%s, chunks=%s, duration=%.2fs, text=%s)",
-                active_segment['segment_id'],
-                rewrite_reason,
-                active_segment['chunk_count'],
-                active_segment['duration_seconds'],
-                refined_segment_text[:50],
-            )
         elif segment_text_result:
             logger.info(
                 "ASR 段级回写结果被过滤(segment=%s, reason=%s, 原始=%s, 清洗后=%s)",
@@ -402,23 +412,31 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
         refined_text_result = refine_asr_result_text(text_result)
 
         if refined_text_result and not should_filter_asr_result(refined_text_result):
-            partial_payload = build_realtime_result_payload(
-                session,
-                refined_text_result,
-                chunk_decision,
-                segment_id=active_segment['segment_id'],
-                result_type="segment_partial",
-            )
-            emit("asr_result", partial_payload)
-            active_segment['last_result_id'] = partial_payload["result_id"]
-            active_segment['latest_display_text'] = refined_text_result
-            logger.info(
-                "ASR 识别成功(原始=%s, 输出=%s, segment=%s, chunks=%s)",
-                text_result[:50] if text_result else "",
-                refined_text_result[:50],
-                active_segment['segment_id'],
-                active_segment['chunk_count'],
-            )
+            if not is_effective_text_update(active_segment.get('latest_display_text', ''), refined_text_result):
+                logger.info(
+                    "Skipping noop partial result(segment=%s, chunks=%s, text=%s)",
+                    active_segment['segment_id'],
+                    active_segment['chunk_count'],
+                    refined_text_result[:50],
+                )
+            else:
+                partial_payload = build_realtime_result_payload(
+                    session,
+                    refined_text_result,
+                    chunk_decision,
+                    segment_id=active_segment['segment_id'],
+                    result_type="segment_partial",
+                )
+                emit("asr_result", partial_payload)
+                active_segment['last_result_id'] = partial_payload["result_id"]
+                active_segment['latest_display_text'] = refined_text_result
+                logger.info(
+                    "ASR 识别成功(原始=%s, 输出=%s, segment=%s, chunks=%s)",
+                    text_result[:50] if text_result else "",
+                    refined_text_result[:50],
+                    active_segment['segment_id'],
+                    active_segment['chunk_count'],
+                )
         elif text_result:
             logger.info(
                 "ASR 结果被过滤(原始=%s, 清洗后=%s)",

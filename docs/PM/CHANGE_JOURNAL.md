@@ -231,3 +231,25 @@
   - 待明早真实长录音测试确认。
 - 后续动作：
   - 继续观察超长会话下缓存体积、提示体验与恢复行为是否合理。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第八轮：无效 partial / rewrite 去重。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `is_effective_text_update()`，用于判断新结果相对上一次展示文本是否真的带来了有效信息增量。
+  - 在 `main.py` 中对 `segment_partial` 与 `segment_rewrite` 增加 no-op 抑制：如果清洗后文本实质未变化，就只记录日志，不再重复 emit。
+  - 对 no-op rewrite 仍会更新段内回写进度，避免因为“结果没变化”而反复重复触发同一次重写。
+  - 在 `tests/test_asr_service.py` 中新增 no-op 文本更新判断测试。
+- 目的：
+  - 减少前端被同一文本反复刷新、反复写缓存。
+  - 让双层转写链路更聚焦“真正变好的结果”，降低无效 UI 抖动和日志噪声。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+- 当前结果：
+  - 如果 chunk 识别结果或段级回写结果与当前展示文本实质相同，系统会直接跳过这次回推。
+  - 对长时间录音和段级回写较频繁的场景，预计前端重复刷新会更少。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续结合真实录音观察“去重后是否会漏掉本该展示的细微改写”。

@@ -415,6 +415,21 @@
 - 主要调用方：
   - `decide_segment_rewrite()`
 
+### `services/asr_service.py:is_effective_text_update(previous_text, new_text)`
+- 输入：
+  - 上一次展示文本
+  - 新候选文本
+- 输出：
+  - `bool`
+- 作用：
+  - 判断新文本相对当前展示文本是否真的带来了有效信息增量。
+  - 当前主要用于抑制 no-op partial / rewrite。
+- 副作用：
+  - 无
+- 主要调用方：
+  - `main.py:process_realtime_audio_chunk()`
+  - `main.py:emit_segment_rewrite_if_needed()`
+
 ### `services/asr_service.py:decide_segment_rewrite(...)`
 - 输入：
   - 当前段累计时长

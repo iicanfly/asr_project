@@ -3,6 +3,7 @@ import unittest
 from services.asr_service import (
     collapse_transcript_text,
     extract_audio_features,
+    is_effective_text_update,
     looks_like_sentence_boundary,
     RealtimeChunkPolicy,
     SegmentRewritePolicy,
@@ -129,6 +130,11 @@ class TranscriptTextHeuristicTests(unittest.TestCase):
         self.assertTrue(looks_like_sentence_boundary("今天的会议先到这里。"))
         self.assertTrue(looks_like_sentence_boundary("这个方案我们明天继续讨论", min_chars=6))
         self.assertFalse(looks_like_sentence_boundary("然后我们", min_chars=6))
+
+    def test_effective_text_update_skips_noop_rewrite(self):
+        self.assertFalse(is_effective_text_update("今天开始。", "今天开始"))
+        self.assertFalse(is_effective_text_update("嗯 今天开始", "今天开始"))
+        self.assertTrue(is_effective_text_update("今天开始", "今天开始讨论方案"))
 
 
 class SegmentRewriteDecisionTests(unittest.TestCase):
