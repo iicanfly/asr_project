@@ -278,6 +278,20 @@ class FilterResultTests(unittest.TestCase):
             should_filter_asr_result("Yeah. Thank you. 嗯。现在我看这个静音。并没有被过滤掉。嗯。")
         )
 
+    def test_strips_contextual_low_information_tail_segments(self):
+        self.assertEqual(
+            refine_asr_result_text("Just.呃，现在。在测试的是。啊。语音转写。嗯。嗯。Thank you."),
+            "现在在测试的是语音转写",
+        )
+        self.assertEqual(
+            refine_asr_result_text("Okay.对。是的吧。那啥。语音转写。嗯。"),
+            "语音转写",
+        )
+
+    def test_keeps_standalone_short_valid_phrase(self):
+        self.assertEqual(refine_asr_result_text("好的"), "好的")
+        self.assertFalse(should_filter_asr_result("好的"))
+
 
 class TranscriptTextHeuristicTests(unittest.TestCase):
     def test_collapse_transcript_text_removes_spacing_and_punctuation(self):

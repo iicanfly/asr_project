@@ -43,8 +43,24 @@ DEFAULT_LOW_INFORMATION_SEGMENTS = (
     "thankyou",
     "what's that",
     "whats that",
+    "what",
+    "just",
+    "right",
+    "alright",
+    "well",
     "was one",
     "one",
+)
+DEFAULT_CONTEXTUAL_LOW_INFORMATION_SEGMENTS = (
+    "对",
+    "好的",
+    "是的",
+    "是的吧",
+    "好",
+    "那啥",
+    "那个",
+    "ok",
+    "okay",
 )
 BOUNDARY_PUNCTUATION = "，。！？、；：,.!?;:~… "
 SEGMENT_SPLIT_PUNCTUATION = "，。！？、；：,.!?;:~…"
@@ -859,6 +875,7 @@ def _is_low_information_segment(
     text: str,
     filler_words: Sequence[str] = DEFAULT_FILLER_WORDS,
     low_information_segments: Sequence[str] = DEFAULT_LOW_INFORMATION_SEGMENTS,
+    contextual_low_information_segments: Sequence[str] = (),
 ) -> bool:
     normalized = _normalize_information_segment(text)
     if not normalized:
@@ -866,6 +883,14 @@ def _is_low_information_segment(
 
     low_info_set = {_normalize_information_segment(segment) for segment in low_information_segments if segment.strip()}
     if normalized in low_info_set:
+        return True
+
+    contextual_set = {
+        _normalize_information_segment(segment)
+        for segment in contextual_low_information_segments
+        if segment.strip()
+    }
+    if contextual_set and normalized in contextual_set:
         return True
 
     dense_text = collapse_transcript_text(normalized)
@@ -895,15 +920,21 @@ def _strip_low_information_segments(
     filler_words: Sequence[str] = DEFAULT_FILLER_WORDS,
     low_information_segments: Sequence[str] = DEFAULT_LOW_INFORMATION_SEGMENTS,
 ) -> tuple[str, int, int]:
+    source_segments = _split_transcript_segments(text)
+    contextual_segments: Sequence[str] = ()
+    if len(source_segments) > 1:
+        contextual_segments = DEFAULT_CONTEXTUAL_LOW_INFORMATION_SEGMENTS
+
     cleaned_segments: list[str] = []
     low_information_count = 0
     meaningful_count = 0
 
-    for segment in _split_transcript_segments(text):
+    for segment in source_segments:
         if _is_low_information_segment(
             segment,
             filler_words=filler_words,
             low_information_segments=low_information_segments,
+            contextual_low_information_segments=contextual_segments,
         ):
             low_information_count += 1
             continue

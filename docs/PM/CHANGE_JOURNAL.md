@@ -164,6 +164,27 @@
 
 ### 2026-05-10 / Commit 待填写
 - 主题：
+  - 清理“说完后幻觉尾巴”的上下文型低信息短句。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `DEFAULT_CONTEXTUAL_LOW_INFORMATION_SEGMENTS`。
+  - 只有当 `对 / 好的 / 是的 / 是的吧 / 好 / 那啥 / 那个 / okay` 这类片段出现在多片段低信息混合结果里时，才和 `嗯 / thank you / just / what` 一起被清除。
+  - 在 `tests/test_asr_service.py` 中补充对 `Just.呃...语音转写...Thank you` 与 `Okay.对。是的吧。那啥。语音转写。嗯` 的回归测试。
+- 目的：
+  - 继续压制“说完一句真实内容后，后面还挂着一串低信息尾巴”的展示问题。
+  - 避免为了压尾巴而把单独出现的正常短句（如“好的”）一起误删。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py`
+  - `python tools/check_doc_corruption.py`
+- 当前结果：
+  - 自动化样本中，混合尾巴可被清理成“现在在测试的是语音转写”或“语音转写”。
+- 用户反馈：
+  - 用户明确反馈“还是有一堆语气词”，本轮正是针对这个场景加固。
+- 后续动作：
+  - 继续结合真实录音判断：主要矛盾到底还剩“上传门控不足”还是“文本尾巴清洗不足”。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
   - 实时转写第三轮：小段结果到大段结果的替换回写最小闭环。
 - 修改内容：
   - 在 `services/asr_service.py` 中新增 `SegmentRewritePolicy`、`SegmentRewriteDecision` 与 `decide_segment_rewrite()`，把段级回写触发条件抽成可测试规则。
