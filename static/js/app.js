@@ -585,7 +585,8 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
                 time: timeStr,
                 serverResultId: data.result_id || null,
                 segmentId: data.segment_id || null,
-                resultType: data.result_type || (data.is_final ? 'final' : 'partial')
+                resultType: data.result_type || (data.is_final ? 'final' : 'partial'),
+                mergePrefixContent: ''
             };
         }
 
@@ -635,18 +636,38 @@ function rememberResultId(resultId) {
         function startsWithOrderedListMarker(text) {
             const value = (text || '').trim();
             if (!value) return false;
-            const numerals = '一二三四五六七八九十123456789';
-            const punctuation = '、，:：.．)';
+            const firstChar = value.charAt(0);
+            const secondChar = value.charAt(1);
+            const thirdChar = value.charAt(2);
+            const listPunctuation = '、，:：.．)）';
 
-            if (value.length >= 2 && numerals.includes(value.charAt(0)) && punctuation.includes(value.charAt(1))) {
+            const isOrderedListNumeral = (char) => {
+                if (!char) return false;
+                if (/[1-9]/.test(char)) return true;
+                const code = char.codePointAt(0);
+                return [
+                    0x4e00, // 一
+                    0x4e8c, // 二
+                    0x4e09, // 三
+                    0x56db, // 四
+                    0x4e94, // 五
+                    0x516d, // 六
+                    0x4e03, // 七
+                    0x516b, // 八
+                    0x4e5d, // 九
+                    0x5341  // 十
+                ].includes(code);
+            };
+
+            if (value.length >= 2 && isOrderedListNumeral(firstChar) && listPunctuation.includes(secondChar)) {
                 return true;
             }
 
             if (
                 value.length >= 3 &&
-                (value.charAt(0) === '（' || value.charAt(0) === '(') &&
-                numerals.includes(value.charAt(1)) &&
-                punctuation.includes(value.charAt(2))
+                (firstChar === '（' || firstChar === '(') &&
+                isOrderedListNumeral(secondChar) &&
+                listPunctuation.includes(thirdChar)
             ) {
                 return true;
             }
@@ -657,7 +678,7 @@ function rememberResultId(resultId) {
         function containsOrderedListMarker(text) {
             const value = (text || '').trim();
             if (!value) return false;
-            return /(?:^|[。！？\s])(?:[一二三四五六七八九十]+|\d+)[、，:：.．]/.test(value);
+            return /(?:^|[\u3002\uFF01\uFF1F\s\uFF1A:])(?:[\u4E00\u4E8C\u4E09\u56DB\u4E94\u516D\u4E03\u516B\u4E5D\u5341]+|\d+)[\u3001\uFF0C:\uFF1A.\uFF0E]/u.test(value);
         }
 
         function shouldMergeStructuredContinuation(lastEntry, text, now) {
@@ -719,14 +740,18 @@ function rememberResultId(resultId) {
 
             if (!target) return false;
 
-            target.content = text;
+            const mergedContent = target.mergePrefixContent
+                ? mergeTranscriptText(target.mergePrefixContent, text)
+                : text;
+
+            target.content = mergedContent;
             target.time = timeStr;
             target.serverResultId = data.result_id || target.serverResultId;
             target.segmentId = data.segment_id || target.segmentId;
             target.resultType = data.result_type || target.resultType;
             rememberResultId(data.result_id);
 
-            updateMessageUI(target.id, text, timeStr);
+            updateMessageUI(target.id, mergedContent, timeStr);
             saveCache();
             document.getElementById('clear-btn').style.display = 'block';
             return true;
@@ -781,7 +806,12 @@ function handleASRResult(data) {
             );
 
             if (shouldMerge && transcriptData.length > 0) {
-                const mergedText = mergeTranscriptText(lastEntry.content, text);
+                if (serverDrivenSegmentBoundary) {
+                    lastEntry.mergePrefixContent = lastEntry.content;
+                }
+
+                const baseText = lastEntry.mergePrefixContent || lastEntry.content;
+                const mergedText = mergeTranscriptText(baseText, text);
                 addMessageUI(data.speaker_id, text, timeStr, true, lastEntry.id);
                 lastEntry.content = mergedText;
                 lastEntry.time = timeStr;
