@@ -262,3 +262,16 @@
   - 打开浏览器控制台，观察是否出现：
     - `segment_rewrite 未命中 replace_target_id，已回退为按 segment_id 替换`
   - 如果出现上述日志，同时前端碎片被成功覆盖，说明这轮前端回写兜底已生效。
+
+### 2026-05-10 / 前导过滤片段丢弃与前端缓存强刷补充
+- 自动化补充检查：
+  - 伪造输入序列 `嗯。/嗯。/重要约束。` 时：
+    - 前两段过滤结果不应继续留在 active segment 中；
+    - 第三段应作为新的有效 segment 起点。
+- 手工补充检查：
+  - 服务重启后，打开页面应加载带版本参数的 `app.js`，避免继续命中旧缓存。
+  - 真实长句回归时，观察终端日志中是否出现：
+    - `ASR partial emitted(...)`
+    - `ASR result filtered(...)`
+    - `Discarding leading filtered realtime segment ...`
+  - 若前导 `嗯/啊` 被丢弃，则首次真正有意义的 rewrite 应更早发生。

@@ -557,3 +557,18 @@
   1. `“嗯。是。重要约束。”` 是否会收敛为 `“重要约束”`
   2. 同一段长句在前端是否会被已有 rewrite 覆盖，而不是继续堆成很多碎片
   3. 浏览器控制台里是否出现 `segment_rewrite 未命中 replace_target_id，已回退为按 segment_id 替换`，用于判断是否真的命中过兜底逻辑
+
+## 2026-05-10 / 对样本 214623 的关键新结论
+- 已对 `C:\Users\16010\Desktop\asr_developing_project\asr_project\temp_audio\stream_recording_20260510_214623.pcm` 做真样本复盘。
+- 结论不是“后端完全没有回写”，而是：
+  - 后端当前**确实会发出 `segment_rewrite`**
+  - 对该样本离线复盘得到：
+    - `segment_partial = 18`
+    - `segment_rewrite = 9`
+- 当前更像是三类问题叠加：
+  1. 前导 `嗯` 这类被过滤的 chunk 仍然会混进 active segment，导致首次 rewrite 音频被拉长；
+  2. rewrite 的 ASR 请求本身较慢，用户肉眼体验像“迟迟不回写”；
+  3. 浏览器端如果继续使用旧版 `app.js`，会让“代码明明改了但页面没变化”的错觉更严重。
+- 已追加的新修补：
+  - 丢弃“还没有任何可见结果前”的前导过滤片段；
+  - 给 `app.js` 增加静态资源版本参数，避免浏览器继续吃旧缓存。

@@ -191,7 +191,12 @@ DOC_PROMPTS = {
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    app_js_path = os.path.join(app.static_folder or "static", "js", "app.js")
+    try:
+        app_js_version = int(os.path.getmtime(app_js_path))
+    except OSError:
+        app_js_version = int(time.time())
+    return render_template("index.html", app_js_version=app_js_version)
 
 
 @app.route("/logo.jpeg")
@@ -461,8 +466,9 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
     try:
         text_result = transcribe_realtime_chunk(audio_data)
         refined_text_result = refine_asr_result_text(text_result)
+        is_filtered_result = not refined_text_result or should_filter_asr_result(refined_text_result)
 
-        if refined_text_result and not should_filter_asr_result(refined_text_result):
+        if refined_text_result and not is_filtered_result:
             if not is_effective_text_update(active_segment.get('latest_display_text', ''), refined_text_result):
                 logger.info(
                     "Skipping noop partial result(segment=%s, chunks=%s, text=%s)",
@@ -482,7 +488,8 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                 active_segment['last_result_id'] = partial_payload["result_id"]
                 active_segment['latest_display_text'] = refined_text_result
                 logger.info(
-                    "ASR 识别成功(原始=%s, 输出=%s, segment=%s, chunks=%s)",
+                    "ASR partial emitted(result_id=%s, raw=%s, refined=%s, segment=%s, chunks=%s)",
+                    partial_payload["result_id"],
                     text_result[:50] if text_result else "",
                     refined_text_result[:50],
                     active_segment['segment_id'],
@@ -490,10 +497,22 @@ def process_realtime_audio_chunk(session, sid, audio_data: bytes, chunk_decision
                 )
         elif text_result:
             logger.info(
-                "ASR 结果被过滤(原始=%s, 清洗后=%s)",
+                "ASR result filtered(raw=%s, refined=%s)",
                 text_result[:50],
                 refined_text_result[:50] if refined_text_result else "",
             )
+            if not active_segment.get('last_result_id'):
+                logger.info(
+                    "Discarding leading filtered realtime segment sid=%s segment=%s chunks=%s duration=%.2fs raw=%s refined=%s",
+                    sid,
+                    active_segment['segment_id'],
+                    active_segment['chunk_count'],
+                    active_segment['duration_seconds'],
+                    text_result[:50],
+                    refined_text_result[:50] if refined_text_result else "",
+                )
+                session['active_segment'] = None
+                return
 
         emit_segment_rewrite_if_needed(
             session,

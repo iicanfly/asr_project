@@ -935,3 +935,39 @@
 - 后续动作：
   - 先让用户用真实录音回归这版；
   - 若仍碎，再继续收紧 `segment_rewrite` 的触发节奏，而不是先盲目继续堆复杂逻辑。
+
+### 2026-05-10 / Commit 待提交
+- 主题：
+  - 针对 `stream_recording_20260510_214623.pcm` 做真样本复盘，并修补“前导无效片段拖慢回写”和“浏览器可能继续吃旧 JS”两个问题。
+- 修改内容：
+  - 复盘确认：当前后端对该样本**实际会发出 9 次 `segment_rewrite`**，并非完全没触发。
+  - 在 `main.py` 中增加“前导过滤片段丢弃”：
+    - 如果某个 chunk 的 ASR 结果被过滤，
+    - 且当前 segment 还没有任何已展示结果，
+    - 则直接丢弃这个前导 segment，避免前面的 `嗯/啊/thank you` 一类垃圾片段继续累积进后续大段 rewrite 音频。
+  - 在 `main.py` 中补充更明确的英文日志：
+    - `ASR partial emitted(...)`
+    - `ASR result filtered(...)`
+    - `Discarding leading filtered realtime segment ...`
+  - 在 `templates/index.html` 中为 `app.js` 增加版本参数，强制浏览器在代码更新后重新拉取最新前端脚本。
+- 目的：
+  - 缩短真正有意义的 segment 从开始累计到首次回写的路径长度；
+  - 避免“后端改了，但浏览器还在跑旧 JS”这种假象。
+- 验证方式：
+  - 对 `214623.pcm` 的离线复盘确认：当前后端会发 `18` 次 `segment_partial`、`9` 次 `segment_rewrite`
+  - `conda run --no-capture-output -n asr python -m py_compile main.py`
+  - 伪造三段输入的快速验证：
+    - 前两段 `嗯。` 会被直接丢弃，不再留在活动 segment 中；
+    - 第三段 `重要约束。` 会正常成为新的 segment 起点。
+- 当前结果：
+  - 已确认：你看到“整段一直是碎片”的现象，**不能再简单归因于‘后端没有触发回写’**；
+  - 更准确的判断是：
+    - 后端会触发回写；
+    - 但回写很慢；
+    - 同时前导垃圾 chunk 会拖长 rewrite 音频；
+    - 浏览器如果没重新拉最新 JS，还会进一步放大“像没生效”的错觉。
+- 用户反馈：
+  - 用户明确表示从未肉眼观察到回写成功，对现有实现可信度极低。
+- 后续动作：
+  - 让用户重启服务并强刷页面后，用同类长句再次回归；
+  - 同时重点观察终端里新的 `ASR partial emitted / Discarding leading filtered realtime segment` 日志。
