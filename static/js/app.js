@@ -20,7 +20,8 @@ let audioChunks = [];
         const AUDIO_CACHE_KEY = 'voice_system_audio_blob';
         const CACHE_SAVE_DEBOUNCE_MS = 1500;
 
-        let messageIdCounter = 0;
+let messageIdCounter = 0;
+        let seenResultIds = new Set();
 
         let currentDocType = 'meeting';
 
@@ -514,6 +515,24 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
             };
         }
 
+        function rememberResultId(resultId) {
+            if (!resultId) return;
+            seenResultIds.add(resultId);
+        }
+
+        function rebuildSeenResultIds() {
+            seenResultIds = new Set();
+            transcriptData.forEach(item => {
+                if (item.serverResultId) {
+                    seenResultIds.add(item.serverResultId);
+                }
+            });
+        }
+
+        function hasSeenResultId(resultId) {
+            return Boolean(resultId) && seenResultIds.has(resultId);
+        }
+
         function shouldInsertTranscriptSpace(previousText, nextText) {
             const prev = (previousText || '').trim();
             const next = (nextText || '').trim();
@@ -556,6 +575,7 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
             target.serverResultId = data.result_id || target.serverResultId;
             target.segmentId = data.segment_id || target.segmentId;
             target.resultType = data.result_type || target.resultType;
+            rememberResultId(data.result_id);
 
             updateMessageUI(target.id, text, timeStr);
             saveCache();
@@ -563,10 +583,15 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
             return true;
         }
 
-        function handleASRResult(data) {
+function handleASRResult(data) {
             // 实时更新转写列表
             const list = document.getElementById('transcript-list');
             if (list.querySelector('.empty-state')) list.innerHTML = '';
+
+            if (hasSeenResultId(data.result_id)) {
+                console.log('跳过重复 result_id:', data.result_id);
+                return;
+            }
 
             // 如果识别结果为空，显示"未识别到话语"
             const text = data.text && data.text.trim() ? data.text : "[未识别到话语]";
@@ -611,12 +636,14 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
                 lastEntry.serverResultId = data.result_id || lastEntry.serverResultId;
                 lastEntry.segmentId = data.segment_id || lastEntry.segmentId;
                 lastEntry.resultType = data.result_type || lastEntry.resultType;
+                rememberResultId(data.result_id);
             } else {
                 // 生成唯一消息 ID
                 const messageId = ++messageIdCounter;
 
                 addMessageUI(data.speaker_id, text, timeStr, false, messageId);
                 transcriptData.push(buildTranscriptEntry(data, messageId, text, timeStr));
+                rememberResultId(data.result_id);
             }
 
             lastSpeaker = data.speaker_id;
@@ -963,6 +990,7 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
             const index = transcriptData.findIndex(m => m.id === messageId);
             if (index !== -1) {
                 transcriptData.splice(index, 1);
+                rebuildSeenResultIds();
                 saveCache();
             }
 
@@ -1675,6 +1703,7 @@ function persistCacheNow() {
                             transcriptData.push(d);
                             lastSpeaker = d.speaker;
                         });
+                        rebuildSeenResultIds();
                         document.getElementById('minutes-btn').style.display = 'flex';
                     }
                 } catch (error) {
@@ -1695,6 +1724,7 @@ function persistCacheNow() {
                 transcriptData = [];
                 lastSpeaker = null;
                 lastMessageTime = 0;
+                seenResultIds = new Set();
                 safeRemoveLocalStorage(CACHE_KEY);
                 safeRemoveLocalStorage(AUDIO_CACHE_KEY);
                 safeRemoveLocalStorage(COMP_PROCESSED_KEY);

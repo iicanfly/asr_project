@@ -253,3 +253,24 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 继续结合真实录音观察“去重后是否会漏掉本该展示的细微改写”。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第九轮：前端重复 result_id 投递去重。
+- 修改内容：
+  - 在 `static/js/app.js` 中新增 `seenResultIds` 内存集合，以及 `rememberResultId()` / `rebuildSeenResultIds()` / `hasSeenResultId()`。
+  - `handleASRResult()` 现在会在最前面跳过同一个 `result_id` 的重复投递。
+  - 在合并、替换、缓存恢复、删除消息、清空会话等路径上同步维护 `seenResultIds`，避免集合漂移。
+- 目的：
+  - 进一步降低网络重投、前端重复处理同一条结果时造成的 UI 抖动与重复缓存写入。
+  - 让前端即使在后端已做 no-op 去重后，仍保留一层 result_id 级别的兜底保护。
+- 验证方式：
+  - `node -e "new Function(require('fs').readFileSync('static/js/app.js','utf8')); console.log('app.js syntax OK')"` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 同一个 `result_id` 即使被前端重复收到，也只会处理一次。
+  - 对网络抖动、重连边界或未来可能的重放场景更稳。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续观察是否还存在“不同 result_id 但语义重复”的边界抖动场景。

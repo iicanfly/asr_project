@@ -58,6 +58,7 @@
     - `segment_rewrite` 到达后，旧文本会被直接覆盖，而不是变成重复追加。
     - 新的 `segment_id` 到达后，应新开一条消息，不应继续粘到上一段里。
     - 当新结果与当前展示文本实质相同，前端不应再出现无意义的重复刷新。
+    - 当同一个 `result_id` 被重复投递时，前端也不应重复渲染。
 - 静音过滤 / 弱语音专项观察：
   - 后端日志里应重点看 `Dropping realtime buffer` 与 `Processing realtime chunk` 两类日志。
   - 观察 `rms / peak / active / voiced` 指标与实际听感是否一致。

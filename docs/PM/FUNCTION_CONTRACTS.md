@@ -305,6 +305,8 @@
   - 新 `segment_id` 时优先新建一条
   - 其余情况再回退到“同说话人 + 10 秒时间窗”
   - 中文默认直接拼接，英文 / 数字连续词之间保留空格
+- 当前补充：
+  - 如果同一个 `result_id` 被前端重复收到，当前版本会在入口处直接跳过
 
 ### `static/js/app.js:addMessageUI(speaker, text, time, merge = false, messageId = null)`
 - 输入：
