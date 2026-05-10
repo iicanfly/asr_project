@@ -270,3 +270,13 @@
    - `processing_reason`
    - `chunk_duration_seconds`
 6. 前端 `handleASRResult()` 已能消费这组扩展字段，但当前只有“兼容能力”，尚未真正启用双层替换回写策略。
+## 2026-05-10 / 本地缓存链路补充（二）
+
+### localStorage 安全读写
+- 主要位置：
+  - `safeSetLocalStorage()`
+  - `safeGetLocalStorage()`
+  - `safeRemoveLocalStorage()`
+- 作用：
+  - 把前端本地缓存的写入、读取、删除都统一纳入异常保护。
+  - 当浏览器限制 localStorage 或缓存损坏时，优先降级告警，而不是直接打断页面初始化、缓存恢复或离线补偿检查。

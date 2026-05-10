@@ -120,7 +120,6 @@ let messageIdCounter = 0;
                 infoEl.style.color = '';
             }
         }
-
         function safeSetLocalStorage(key, value, { warningKind, warningMessage } = {}) {
             try {
                 localStorage.setItem(key, value);
@@ -134,6 +133,22 @@ let messageIdCounter = 0;
                     showStorageWarning(warningKind, warningMessage);
                 }
                 return false;
+            }
+        }
+
+        function safeGetLocalStorage(key, { warningKind, warningMessage } = {}) {
+            try {
+                const value = localStorage.getItem(key);
+                if (warningKind) {
+                    clearStorageWarning(warningKind);
+                }
+                return value;
+            } catch (error) {
+                console.error(`localStorage 读取失败: ${key}`, error);
+                if (warningKind && warningMessage) {
+                    showStorageWarning(warningKind, warningMessage);
+                }
+                return null;
             }
         }
 
@@ -417,8 +432,14 @@ function stopRecording() {
         }
 
         function checkPendingAudio() {
-            const pending = localStorage.getItem(AUDIO_CACHE_KEY);
-            const processed = localStorage.getItem(COMP_PROCESSED_KEY);
+            const pending = safeGetLocalStorage(AUDIO_CACHE_KEY, {
+                warningKind: 'audio',
+                warningMessage: '离线补偿音频缓存读取失败，可能是浏览器限制了本地存储访问。'
+            });
+            const processed = safeGetLocalStorage(COMP_PROCESSED_KEY, {
+                warningKind: 'audio',
+                warningMessage: '离线补偿音频状态读取失败，可能是浏览器限制了本地存储访问。'
+            });
             
             if (pending && processed === 'false' && isBackendOnline) {
                 // 如果当前没有任何转写内容，才提示补偿，避免干扰正常录音流程
@@ -439,7 +460,10 @@ function stopRecording() {
         }
 
         async function uploadCachedAudio() {
-            const dataUrl = localStorage.getItem(AUDIO_CACHE_KEY);
+            const dataUrl = safeGetLocalStorage(AUDIO_CACHE_KEY, {
+                warningKind: 'audio',
+                warningMessage: '离线补偿音频缓存读取失败，可能是浏览器限制了本地存储访问。'
+            });
             if (!dataUrl) return;
 
             const blob = dataURLtoBlob(dataUrl);
@@ -1100,7 +1124,10 @@ function addMessageUI(speaker, text, time, merge = false, messageId = null) {
 
         // --- 历史记录管理 ---
         function loadDocHistory() {
-            const saved = localStorage.getItem(DOC_HISTORY_KEY);
+            const saved = safeGetLocalStorage(DOC_HISTORY_KEY, {
+                warningKind: 'history',
+                warningMessage: '历史文档缓存读取失败，可能是浏览器限制了本地存储访问。'
+            });
             if (saved) {
                 try {
                     docHistory = JSON.parse(saved);
@@ -1689,7 +1716,10 @@ function persistCacheNow() {
         }
 
         function loadCache() {
-            const cached = localStorage.getItem(CACHE_KEY);
+            const cached = safeGetLocalStorage(CACHE_KEY, {
+                warningKind: 'transcript',
+                warningMessage: '转写缓存读取失败，可能是浏览器限制了本地存储访问。'
+            });
             if (cached) {
                 try {
                     const data = JSON.parse(cached);
@@ -1749,7 +1779,10 @@ function persistCacheNow() {
 
         function updateCacheInfo() {
             const transcriptBytes = new Blob([JSON.stringify(transcriptData)]).size;
-            const pendingAudio = localStorage.getItem(AUDIO_CACHE_KEY) || '';
+            const pendingAudio = safeGetLocalStorage(AUDIO_CACHE_KEY, {
+                warningKind: 'audio',
+                warningMessage: '离线补偿音频缓存读取失败，可能是浏览器限制了本地存储访问。'
+            }) || '';
             const pendingAudioBytes = pendingAudio ? new Blob([pendingAudio]).size : 0;
             const infoEl = document.getElementById('cache-info');
             if (!infoEl) return;

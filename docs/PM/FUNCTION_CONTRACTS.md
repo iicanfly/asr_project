@@ -505,3 +505,15 @@
 ### `static/js/app.js:loadCache()`（修正）
 - 当前补充事实：
   - 从缓存恢复时，当前版本按缓存中的条目逐条恢复，不再在恢复阶段做额外合并，以避免缓存数据与界面展示再次发生偏移。
+### `static/js/app.js:safeGetLocalStorage(key, options)`
+- 输入：
+  - `key`：要读取的 localStorage 键名
+  - `options.warningKind`：告警类型（如 `audio` / `transcript` / `history`）
+  - `options.warningMessage`：读取失败时展示的提示语
+- 输出：
+  - 成功时返回缓存字符串或 `null`
+  - 读取失败时返回 `null`
+- 作用：
+  - 统一封装浏览器 `localStorage.getItem()` 的异常兜底与缓存告警逻辑。
+- 当前约束：
+  - 新增的 localStorage 读取路径默认应优先复用该函数，而不是直接裸调 `localStorage.getItem()`。
