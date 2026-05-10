@@ -2,6 +2,8 @@ import unittest
 
 from services.asr_service import (
     collapse_transcript_text,
+    describe_tail_triggerable_speech,
+    describe_usable_speech,
     extract_audio_features,
     has_tail_triggerable_speech,
     is_effective_text_update,
@@ -122,6 +124,7 @@ class AudioFeatureTests(unittest.TestCase):
         noisy_audio = pcm_window(150, 16000 * 2)
         features = extract_audio_features(noisy_audio)
         self.assertFalse(has_usable_speech(features, policy))
+        self.assertEqual(describe_usable_speech(features, policy), "no_usable_speech")
 
         decision = decide_chunk_processing(noisy_audio, policy)
         self.assertFalse(decision.should_process)
@@ -137,6 +140,8 @@ class AudioFeatureTests(unittest.TestCase):
         self.assertLess(features.voiced_ratio, policy.min_voiced_ratio)
         self.assertTrue(has_usable_speech(features, policy))
         self.assertTrue(has_tail_triggerable_speech(features, policy))
+        self.assertEqual(describe_usable_speech(features, policy), "sustained_soft_speech")
+        self.assertEqual(describe_tail_triggerable_speech(features, policy), "tail_sustained_presence")
 
 
 class FilterResultTests(unittest.TestCase):

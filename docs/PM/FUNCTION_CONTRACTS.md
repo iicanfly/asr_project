@@ -403,6 +403,24 @@
 - 当前约束：
   - 除了满足 `has_usable_speech()`，还要求尾段具备最小活跃秒数与最小有声秒数；强信号则可直接放行。
 
+### `services/asr_service.py:describe_usable_speech(features, policy)`
+- 输入：
+  - `AudioFeatures`
+  - `RealtimeChunkPolicy`
+- 输出：
+  - 原因标签字符串，如 `strong_signal` / `sustained_voiced` / `sustained_soft_speech` / `no_usable_speech`
+- 作用：
+  - 让后端能显式说明“当前音频为什么被视为可用或不可用语音”。
+
+### `services/asr_service.py:describe_tail_triggerable_speech(features, policy)`
+- 输入：
+  - `AudioFeatures`
+  - `RealtimeChunkPolicy`
+- 输出：
+  - 原因标签字符串，如 `tail_strong_signal` / `tail_sustained_presence` / `tail_presence_too_brief`
+- 作用：
+  - 让尾静音切片路径能解释：当前尾段是因为足够强、足够持续，还是因为持续性不足而未被切出。
+
 ### `services/asr_service.py:refine_asr_result_text(text, filler_words=...)`
 - 输入：
   - `text: str`

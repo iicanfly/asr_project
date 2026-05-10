@@ -378,3 +378,25 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 继续结合真实录音观察 `drop_brief_tail_speech` 是否过严，是否会误伤非常短但用户确实想保留的单词级表达。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十五轮：语音门槛原因显式化。
+- 修改内容：
+  - 在 `services/asr_service.py` 中新增 `describe_usable_speech()` 与 `describe_tail_triggerable_speech()`，把“为什么通过 / 没通过门槛”从布尔值细化为原因标签。
+  - `ChunkDecision` 新增 `speech_gate_reason` 与 `tail_gate_reason`，并在 chunk / stop flush 决策中写入。
+  - `main.py` 的实时处理与丢弃日志新增 `speech_gate`、`tail_gate` 输出。
+  - 在 `tests/test_asr_service.py` 中补充原因标签的断言，确保噪声与柔和语音样本的分类结果稳定。
+- 目的：
+  - 让明早真实录音调阈值时，不只知道“过了 / 没过”，还能直接知道是强信号、持续有声还是柔和语音兜底在生效。
+  - 降低继续细调静音过滤时的理解成本，避免后续规则堆叠后变成黑盒。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 日志现在不仅能输出 `active_s / voiced_s / silence`，还会明确标记本段命中了哪一类语音门槛。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续把真实录音中的 gate reason 与前端文本效果对照，决定下一轮是否需要微调具体阈值。

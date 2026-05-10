@@ -105,3 +105,11 @@
   - 如果同样是尾静音场景，但前面已经形成足够持续的柔和主语音，则仍应允许触发转写。
 - 本轮已新增：
   - `tests/test_asr_service.py::test_brief_tail_speech_is_dropped_even_if_it_has_some_voiced_frames`
+
+### 2026-05-10 / gate reason 观察补充
+- 手工补充检查：
+  - 明早真实录音时，除数值日志外，还要重点记录 `speech_gate` 与 `tail_gate` 标签，确认当前放行 / 拦截是否符合预期。
+  - 如果误触发样本与漏识别样本长期集中在同一类 gate reason，下一轮阈值调整应优先围绕那条规则进行。
+- 自动化补充检查：
+  - 噪声样本应稳定输出 `no_usable_speech`。
+  - 柔和但持续的人声样本应稳定输出 `sustained_soft_speech` 与 `tail_sustained_presence`。

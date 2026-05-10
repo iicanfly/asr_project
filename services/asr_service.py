@@ -69,6 +69,8 @@ class ChunkDecision:
     trailing_silence_detected: bool
     drop_buffer: bool = False
     audio_features: AudioFeatures | None = None
+    speech_gate_reason: str = ""
+    tail_gate_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -243,9 +245,9 @@ def _adaptive_presence_seconds(
     return min(cap_seconds, max(minimum_floor, duration_seconds * ratio_floor))
 
 
-def has_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:
+def describe_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> str:
     if features.duration_seconds <= 0:
-        return False
+        return "empty_audio"
 
     strong_signal = features.rms >= policy.speech_rms_threshold and features.peak >= policy.speech_peak_threshold
     required_voiced_seconds = _adaptive_presence_seconds(
@@ -264,6 +266,11 @@ def has_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> b
         features.voiced_ratio >= policy.min_voiced_ratio
         and features.voiced_seconds >= required_voiced_seconds
     )
+    if strong_signal:
+        return "strong_signal"
+    if sustained_voiced:
+        return "sustained_voiced"
+
     sustained_active_speech = (
         features.active_ratio >= policy.min_active_ratio
         and features.active_seconds >= required_active_seconds
@@ -271,21 +278,38 @@ def has_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> b
         and features.peak >= policy.active_speech_peak_threshold
         and features.voiced_ratio >= (policy.min_voiced_ratio * 0.5)
     )
-    return strong_signal or sustained_voiced or sustained_active_speech
+    if sustained_active_speech:
+        return "sustained_soft_speech"
+    return "no_usable_speech"
 
 
-def has_tail_triggerable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:
-    if not has_usable_speech(features, policy):
-        return False
+def has_usable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:
+    return describe_usable_speech(features, policy) in {
+        "strong_signal",
+        "sustained_voiced",
+        "sustained_soft_speech",
+    }
+
+
+def describe_tail_triggerable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> str:
+    usable_reason = describe_usable_speech(features, policy)
+    if usable_reason in {"empty_audio", "no_usable_speech"}:
+        return usable_reason
 
     strong_signal = features.rms >= policy.speech_rms_threshold and features.peak >= policy.speech_peak_threshold
     if strong_signal:
-        return True
+        return "tail_strong_signal"
 
-    return (
+    if (
         features.active_seconds >= policy.tail_trigger_min_active_seconds
         and features.voiced_seconds >= policy.tail_trigger_min_voiced_seconds
-    )
+    ):
+        return "tail_sustained_presence"
+    return "tail_presence_too_brief"
+
+
+def has_tail_triggerable_speech(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:
+    return describe_tail_triggerable_speech(features, policy) in {"tail_strong_signal", "tail_sustained_presence"}
 
 
 def is_weak_background_audio(features: AudioFeatures, policy: RealtimeChunkPolicy) -> bool:
@@ -311,9 +335,10 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
         speech_peak_threshold=policy.speech_peak_threshold,
     )
     duration_seconds = features.duration_seconds
+    speech_gate_reason = describe_usable_speech(features, policy)
 
     if duration_seconds >= policy.max_audio_seconds:
-        if not has_usable_speech(features, policy):
+        if speech_gate_reason not in {"strong_signal", "sustained_voiced", "sustained_soft_speech"}:
             return ChunkDecision(
                 should_process=False,
                 reason="drop_weak_audio_at_max_duration",
@@ -321,6 +346,7 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
                 trailing_silence_detected=False,
                 drop_buffer=True,
                 audio_features=features,
+                speech_gate_reason=speech_gate_reason,
             )
         return ChunkDecision(
             should_process=True,
@@ -328,10 +354,11 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
         )
 
     if duration_seconds >= policy.chunk_seconds:
-        if not has_usable_speech(features, policy):
+        if speech_gate_reason not in {"strong_signal", "sustained_voiced", "sustained_soft_speech"}:
             return ChunkDecision(
                 should_process=False,
                 reason="drop_weak_audio_at_chunk_duration",
@@ -339,6 +366,7 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
                 trailing_silence_detected=False,
                 drop_buffer=True,
                 audio_features=features,
+                speech_gate_reason=speech_gate_reason,
             )
         return ChunkDecision(
             should_process=True,
@@ -346,6 +374,7 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
         )
 
     if duration_seconds < policy.min_audio_seconds:
@@ -355,6 +384,7 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
         )
 
     min_required_bytes = policy.min_speech_frames * 4
@@ -365,6 +395,7 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
         )
 
     tail_audio = audio_data[-policy.tail_silence_bytes :]
@@ -375,8 +406,9 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
         peak_threshold=policy.peak_threshold,
         silence_ratio_threshold=policy.silence_ratio_threshold,
     )
-    usable_speech = has_usable_speech(features, policy)
-    tail_triggerable_speech = has_tail_triggerable_speech(features, policy)
+    usable_speech = speech_gate_reason in {"strong_signal", "sustained_voiced", "sustained_soft_speech"}
+    tail_gate_reason = describe_tail_triggerable_speech(features, policy)
+    tail_triggerable_speech = tail_gate_reason in {"tail_strong_signal", "tail_sustained_presence"}
     weak_background = is_weak_background_audio(features, policy)
 
     if trailing_silence_detected and weak_background and not usable_speech:
@@ -387,6 +419,8 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
             trailing_silence_detected=True,
             drop_buffer=True,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+            tail_gate_reason=tail_gate_reason,
         )
 
     if trailing_silence_detected and not tail_triggerable_speech and features.active_seconds > 0:
@@ -397,6 +431,8 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
             trailing_silence_detected=True,
             drop_buffer=True,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
+            tail_gate_reason=tail_gate_reason,
         )
 
     return ChunkDecision(
@@ -409,6 +445,8 @@ def decide_chunk_processing(audio_data: bytes, policy: RealtimeChunkPolicy) -> C
         audio_duration_seconds=duration_seconds,
         trailing_silence_detected=trailing_silence_detected,
         audio_features=features,
+        speech_gate_reason=speech_gate_reason,
+        tail_gate_reason=tail_gate_reason,
     )
 
 
@@ -481,6 +519,7 @@ def decide_stop_flush(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDe
         speech_peak_threshold=policy.speech_peak_threshold,
     )
     duration_seconds = features.duration_seconds
+    speech_gate_reason = describe_usable_speech(features, policy)
 
     if duration_seconds <= 0:
         return ChunkDecision(
@@ -489,6 +528,7 @@ def decide_stop_flush(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDe
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
         )
 
     if duration_seconds < policy.stop_flush_min_seconds:
@@ -498,9 +538,10 @@ def decide_stop_flush(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDe
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
         )
 
-    if is_weak_background_audio(features, policy) or not has_usable_speech(features, policy):
+    if is_weak_background_audio(features, policy) or speech_gate_reason not in {"strong_signal", "sustained_voiced", "sustained_soft_speech"}:
         return ChunkDecision(
             should_process=False,
             reason="stop_flush_drop_weak_audio",
@@ -508,6 +549,7 @@ def decide_stop_flush(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDe
             trailing_silence_detected=False,
             drop_buffer=True,
             audio_features=features,
+            speech_gate_reason=speech_gate_reason,
         )
 
     return ChunkDecision(
@@ -516,6 +558,7 @@ def decide_stop_flush(audio_data: bytes, policy: RealtimeChunkPolicy) -> ChunkDe
         audio_duration_seconds=duration_seconds,
         trailing_silence_detected=False,
         audio_features=features,
+        speech_gate_reason=speech_gate_reason,
     )
 
 
