@@ -632,6 +632,50 @@ function rememberResultId(resultId) {
             return shouldInsertTranscriptSpace(prev, next) ? `${prev} ${next}` : `${prev}${next}`;
         }
 
+        function startsWithOrderedListMarker(text) {
+            const value = (text || '').trim();
+            if (!value) return false;
+            const numerals = '一二三四五六七八九十123456789';
+            const punctuation = '、，:：.．)';
+
+            if (value.length >= 2 && numerals.includes(value.charAt(0)) && punctuation.includes(value.charAt(1))) {
+                return true;
+            }
+
+            if (
+                value.length >= 3 &&
+                (value.charAt(0) === '（' || value.charAt(0) === '(') &&
+                numerals.includes(value.charAt(1)) &&
+                punctuation.includes(value.charAt(2))
+            ) {
+                return true;
+            }
+
+            return false;
+        }
+
+        function containsOrderedListMarker(text) {
+            const value = (text || '').trim();
+            if (!value) return false;
+            return /(?:^|[。！？\s])(?:[一二三四五六七八九十]+|\d+)[、，:：.．]/.test(value);
+        }
+
+        function shouldMergeStructuredContinuation(lastEntry, text, now) {
+            if (!lastEntry) return false;
+
+            const previousText = (lastEntry.content || '').trim();
+            const nextText = (text || '').trim();
+            if (!previousText || !nextText) return false;
+
+            if (now - lastMessageTime >= 15000) return false;
+
+            return (
+                startsWithOrderedListMarker(nextText) ||
+                startsWithOrderedListMarker(previousText) ||
+                containsOrderedListMarker(previousText)
+            );
+        }
+
         function updateMessageUI(messageId, text, time) {
             const messageDiv = document.querySelector(`div[data-message-id="${messageId}"]`);
             if (!messageDiv) return false;
@@ -728,6 +772,9 @@ function handleASRResult(data) {
             // 2. 如果后端显式切换了新的 segment_id，则强制新建段落
             // 3. 其它情况沿用原有“同说话人 + 10 秒内”规则
             const shouldMerge = sameSegmentContinuation || (
+                serverDrivenSegmentBoundary &&
+                shouldMergeStructuredContinuation(lastEntry, text, now)
+            ) || (
                 !serverDrivenSegmentBoundary &&
                 lastSpeaker === data.speaker_id &&
                 (now - lastMessageTime < 10000)
