@@ -168,6 +168,74 @@
 - 如果需要继续做实时转写专项开发，默认先回看：
   - `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
 
+## 文档路由总表（高层文档如何指向下层文档）
+
+本文件作为高层协作记忆，不应只停留在“知道有这些文档”，而要明确：
+
+> 当前是什么任务 -> 下一步该去查哪几份文档推进开发
+
+默认路由如下：
+
+### A. 实时转写功能开发
+- 高层入口：
+  - `SESSION_SUMMARY.md`
+  - `BACKLOG.md`
+- 下钻文档：
+  - `REALTIME_ASR_CURRENT_IMPLEMENTATION.md`
+  - `REALTIME_DEBUG_PLAYBOOK.md`
+  - `TEST_MATRIX.md`
+- 如果准备重构：
+  - `REALTIME_ASR_SIMPLIFIED_REFACTOR_PLAN.md`
+  - `REALTIME_ASR_SIMPLIFIED_REFACTOR_CHECKLIST.md`
+
+### B. 实时转写问题排查 / 联调
+- 高层入口：
+  - `REALTIME_DEBUG_PLAYBOOK.md`
+- 下钻文档：
+  - `CHANGE_JOURNAL.md`
+  - `TEST_MATRIX.md`
+  - `REALTIME_ASR_CURRENT_IMPLEMENTATION.md`
+
+### C. 双环境 / 内网发布前检查
+- 高层入口：
+  - `ENV_MATRIX.md`
+  - `SESSION_SUMMARY.md`
+- 下钻文档：
+  - `CONFIG_MAP.md`
+  - `KNOWN_ISSUES.md`
+  - `TEST_MATRIX.md`
+
+### D. 代码结构理解 / 快速定位
+- 高层入口：
+  - `SYSTEM_OVERVIEW.md`
+  - `MODULE_INDEX.md`
+- 下钻文档：
+  - `FUNCTION_CONTRACTS.md`
+  - `API_FLOW.md`
+  - `CONFIG_MAP.md`
+
+### E. 文档维护 / 记忆沉淀
+- 高层入口：
+  - `DOC_MAINTENANCE.md`
+- 下钻文档：
+  - `CHANGE_JOURNAL.md`
+  - `SESSION_SUMMARY.md`
+  - `BACKLOG.md`
+  - 相关专项文档
+
+### F. 评估某次改动是否有效
+- 高层入口：
+  - `CHANGE_JOURNAL.md`
+- 下钻文档：
+  - `TEST_MATRIX.md`
+  - `SESSION_SUMMARY.md`
+  - 对应专项说明
+
+默认执行原则：
+
+- 高层文档负责“任务分流与阅读顺序”
+- 下层文档负责“实现细节、调试手段、测试口径、风险与回滚信息”
+
 ## 建议的用户提需求格式
 如果方便，用户可以尽量按这个格式提任务：
 1. 目标

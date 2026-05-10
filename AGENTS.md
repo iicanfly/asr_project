@@ -88,3 +88,67 @@
   - 回写触发
   - 前端渲染
   不要把所有慢都归因到 API。
+
+## 文档路由规则（上层记忆 -> 下层文档）
+- 以后进入仓库后，不只要“回看上层记忆文档”，还要根据任务类型，**继续下钻到对应的专项文档**，不能停在高层概述。
+- 默认按下面这张路由表执行：
+
+### 1. 如果任务是“继续推进实时转写开发”
+- 先看：
+  - `docs/PM/SESSION_SUMMARY.md`
+  - `docs/PM/BACKLOG.md`
+- 再看：
+  - `docs/PM/REALTIME_ASR_CURRENT_IMPLEMENTATION.md`
+  - `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
+  - `docs/PM/TEST_MATRIX.md`
+- 如果涉及重构或结构调整，再看：
+  - `docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_PLAN.md`
+  - `docs/PM/REALTIME_ASR_SIMPLIFIED_REFACTOR_CHECKLIST.md`
+
+### 2. 如果任务是“排查实时转写 bug / 联调 / 口测异常”
+- 先看：
+  - `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
+- 再看：
+  - `docs/PM/TEST_MATRIX.md`
+  - `docs/PM/CHANGE_JOURNAL.md`
+  - `docs/PM/REALTIME_ASR_CURRENT_IMPLEMENTATION.md`
+
+### 3. 如果任务是“发布前检查 / 双环境确认 / 内网风险核查”
+- 先看：
+  - `docs/PM/ENV_MATRIX.md`
+  - `docs/PM/SESSION_SUMMARY.md`
+- 再看：
+  - `docs/PM/CONFIG_MAP.md`
+  - `docs/PM/KNOWN_ISSUES.md`
+  - `docs/PM/TEST_MATRIX.md`
+
+### 4. 如果任务是“理解代码结构 / 快速定位改哪个文件”
+- 先看：
+  - `docs/PM/SYSTEM_OVERVIEW.md`
+  - `docs/PM/MODULE_INDEX.md`
+- 再看：
+  - `docs/PM/FUNCTION_CONTRACTS.md`
+  - `docs/PM/API_FLOW.md`
+  - `docs/PM/CONFIG_MAP.md`
+
+### 5. 如果任务是“维护项目文档 / 更新长期记忆”
+- 先看：
+  - `docs/PM/DOC_MAINTENANCE.md`
+  - `docs/PM/CHANGE_JOURNAL.md`
+- 再判断是否要更新：
+  - `docs/PM/BACKLOG.md`
+  - `docs/PM/SESSION_SUMMARY.md`
+  - `docs/PM/KNOWN_ISSUES.md`
+  - 以及对应专项文档
+
+### 6. 如果任务是“回顾某次修改有没有效果”
+- 先看：
+  - `docs/PM/CHANGE_JOURNAL.md`
+- 再看：
+  - `docs/PM/TEST_MATRIX.md`
+  - `docs/PM/SESSION_SUMMARY.md`
+  - 相关专项文档
+
+- 默认原则：
+  - 上层记忆文档负责“告诉自己现在该去读哪份下层文档”
+  - 下层专项文档负责“给出具体实现、调试、测试或发布细节”

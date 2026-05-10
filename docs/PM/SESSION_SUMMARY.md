@@ -56,6 +56,24 @@
 - 优先梳理实时转写主链路中的音频切片、静音判定、前端展示与结果替换机制。
 - 在开始较大改造前，补充一批项目认知文档，降低后续会话重复扫描代码的成本。
 
+## 当前阶段的默认文档阅读顺序
+- 如果下一轮继续做“实时转写功能推进”：
+  1. 先看本文件
+  2. 再看 `BACKLOG.md`
+  3. 再看 `REALTIME_ASR_CURRENT_IMPLEMENTATION.md`
+  4. 再看 `REALTIME_DEBUG_PLAYBOOK.md`
+  5. 最后按需看 `TEST_MATRIX.md`
+- 如果下一轮是“实时转写 bug 排查 / 联调”：
+  1. 先看本文件
+  2. 再看 `REALTIME_DEBUG_PLAYBOOK.md`
+  3. 再看 `CHANGE_JOURNAL.md`
+  4. 再看 `TEST_MATRIX.md`
+- 如果下一轮是“发布前内网确认 / 双环境核查”：
+  1. 先看本文件
+  2. 再看 `ENV_MATRIX.md`
+  3. 再看 `CONFIG_MAP.md`
+  4. 再看 `KNOWN_ISSUES.md`
+
 ## 2026-05-10 / Sprint 0 状态更新
 - 已完成正式开发前的小型稳态整理，目标是先稳住实时转写主链路，再进入质量优化。
 - 本轮已落地：
