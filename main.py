@@ -305,6 +305,7 @@ class SessionManager:
                     'last_process_time': time.time(),
                     'processing': False,
                     'stop_requested': False,
+                    'drain_lock': threading.Lock(),
                     'file_path': file_path,
                     'file_handle': open(file_path, "wb"),
                     'session_tag': timestamp,
@@ -739,6 +740,22 @@ def drain_ready_realtime_buffer(session, sid, *, max_rounds=6):
         cleanup_realtime_session(sid)
 
 
+def try_drain_realtime_buffer(session, sid, *, max_rounds=6):
+    drain_lock = session.get('drain_lock')
+    if drain_lock is None:
+        drain_ready_realtime_buffer(session, sid, max_rounds=max_rounds)
+        return
+
+    acquired = drain_lock.acquire(blocking=False)
+    if not acquired:
+        return
+
+    try:
+        drain_ready_realtime_buffer(session, sid, max_rounds=max_rounds)
+    finally:
+        drain_lock.release()
+
+
 @socketio.on("connect")
 def on_connect():
     logger.info(f"Socket.IO 客户端已连接: {request.sid}")
@@ -789,14 +806,11 @@ def on_audio_stream(data):
 
     session['buffer'].extend(data)
 
-    if session['processing']:
-        return
-
-    drain_ready_realtime_buffer(session, sid)
+    try_drain_realtime_buffer(session, sid)
 
 
 @socketio.on("stop_recording")
-def on_stop_recording():
+def on_stop_recording(data=None):
     sid = request.sid
     session = session_mgr.get(sid)
     session_mgr.mark_recently_stopped(sid)

@@ -292,3 +292,30 @@
     - `filtered_result`
     - `discard_leading_filtered_segment`
   - 如果 trace 中存在 `segment_rewrite`，而页面仍只显示碎片，则优先判定为前端展示链路问题，而不是后端未触发回写。
+
+## 2026-05-10 / 并发 drain 与 stop 事件修复回归
+### 自动化验证
+- 语法检查：
+  - `conda run --no-capture-output -n asr python -m py_compile main.py`
+- 单元测试：
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+- 结果：
+  - 58/58 通过。
+
+### 脚本化链路回放
+- 方法：
+  - 使用 `socketio.test_client()` 直接驱动 `main.py` 的 Socket.IO 事件。
+  - 回放真实 PCM 文件 `temp_audio/stream_recording_20260510_212614.pcm` 的前 400000 字节。
+- 检查点：
+  1. `start_recording` -> `audio_stream` -> `stop_recording` 能完整跑通；
+  2. `stop_recording` 不再报参数异常；
+  3. 能收到 `segment_partial` 与 `segment_rewrite`；
+  4. 停止时能触发 `stop_recording_finalize_segment`。
+- 当前结果：
+  - 通过。
+
+### 待用户手工回归
+- 在前端重新录一段连续长句，重点看：
+  1. 第二段是否还会出现“整句重复 3 次”；
+  2. 停止录音后是否还有异常或漏刷；
+  3. `/api/v1/debug/realtime_trace` 中 `segment_rewrite` 与页面展示是否一致。

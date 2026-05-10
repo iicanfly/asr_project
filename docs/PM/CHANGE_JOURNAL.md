@@ -1006,3 +1006,23 @@
 - 后续动作：
   - 让用户在**重启到最新进程后**再测一遍；
   - 然后直接读取 `/api/v1/debug/realtime_trace` 判断回写事件有没有真正到达后端发射层。
+
+### 2026-05-10 / Commit 待提交
+- 主题：
+  - 修复实时转写链路中的两个确定性问题：`stop_recording` 参数签名错误、同一缓冲区被并发重复 drain 导致重复转写。
+- 修改内容：
+  - 在 `main.py` 的会话对象中新增 `drain_lock`，将实时缓冲区 drain 串行化，避免多个 `audio_stream` 线程同时处理同一份 `buffer`。
+  - 新增 `try_drain_realtime_buffer()`，只允许一个 drain 执行器进入 `drain_ready_realtime_buffer()`。
+  - `on_audio_stream()` 改为统一走 `try_drain_realtime_buffer()`。
+  - `on_stop_recording()` 改为 `def on_stop_recording(data=None)`，兼容前端发送附带 payload 的 stop 事件。
+- 直接证据：
+  - 用户 23:02 这次真实录音的 `/api/v1/debug/realtime_trace` 已确认：后端确实发出了 `segment_rewrite`。
+  - 同时日志出现 `chunk=9/10/11` 连续处理约 9.3 秒的大缓冲区，导致第二段文本被重复 3 次。
+  - 日志还出现异常：`TypeError: on_stop_recording() takes 0 positional arguments but 1 was given`。
+- 验证方式：
+  - `conda run --no-capture-output -n asr python -m py_compile main.py`
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+  - 使用 `socketio.test_client()` 回放真实 PCM 片段，确认停止事件不再报错，且能收到 `segment_rewrite`。
+- 当前结果：
+  - “回写从未触发”这一点已被证伪；本轮真实 trace 已明确看到回写事件。
+  - 当前更核心的问题，已收缩为并发 drain 导致的重复处理与停止事件异常。
