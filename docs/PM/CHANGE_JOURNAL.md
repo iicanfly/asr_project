@@ -185,6 +185,27 @@
 
 ### 2026-05-10 / Commit 待填写
 - 主题：
+  - 为正文后的长串语气词 / 噪声尾巴增加整段截断。
+- 修改内容：
+  - 在 `services/asr_service.py` 中把 `嘘` 纳入低信息片段。
+  - 为 `_strip_low_information_segments()` 增加“尾部连续噪声段整段截断”逻辑。
+  - 在多片段上下文中，把 `那 / 你好` 也纳入上下文型低信息短片段集合。
+  - 在 `tests/test_asr_service.py` 中补充“正文后跟一长串 嗯 / 嘘 / 嗯”应被整体截尾的回归测试。
+- 目的：
+  - 解决“前面正文基本对了，但结尾挂着大量嗯 / 嘘 / thank you”的展示污染。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py`
+  - `python tools/check_doc_corruption.py`
+- 当前结果：
+  - 自动化层面已能把“正文 + 长尾巴”清洗成只保留正文。
+- 用户反馈：
+  - 用户明确反馈“有输出了，但还是一堆嗯”，本轮正是针对这个现象继续加固。
+- 后续动作：
+  - 继续用真实录音判断：下一轮主要该继续压“尾静音上传”还是继续压“尾巴文本污染”。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
   - 实时转写第三轮：小段结果到大段结果的替换回写最小闭环。
 - 修改内容：
   - 在 `services/asr_service.py` 中新增 `SegmentRewritePolicy`、`SegmentRewriteDecision` 与 `decide_segment_rewrite()`，把段级回写触发条件抽成可测试规则。

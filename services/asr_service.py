@@ -8,7 +8,7 @@ from typing import Mapping
 from typing import Sequence
 
 
-DEFAULT_FILLER_WORDS = ("嗯", "啊", "呃", "额", "哦", "唔", "嘿", "咳", "呀", "哎", "诶", "欸", "哈")
+DEFAULT_FILLER_WORDS = ("嗯", "啊", "呃", "额", "哦", "唔", "嘿", "咳", "呀", "哎", "诶", "欸", "哈", "嘘")
 DEFAULT_ALLOWED_SHORT_PHRASES = ("好的", "可以", "收到", "是的", "行的", "没事", "对的")
 DEFAULT_LOW_INFORMATION_SEGMENTS = (
     "嗯",
@@ -28,6 +28,7 @@ DEFAULT_LOW_INFORMATION_SEGMENTS = (
     "您好",
     "谢谢",
     "多谢",
+    "嘘",
     "yes",
     "yeah",
     "yep",
@@ -52,6 +53,7 @@ DEFAULT_LOW_INFORMATION_SEGMENTS = (
     "one",
 )
 DEFAULT_CONTEXTUAL_LOW_INFORMATION_SEGMENTS = (
+    "那",
     "对",
     "好的",
     "是的",
@@ -61,6 +63,7 @@ DEFAULT_CONTEXTUAL_LOW_INFORMATION_SEGMENTS = (
     "那个",
     "ok",
     "okay",
+    "你好",
 )
 BOUNDARY_PUNCTUATION = "，。！？、；：,.!?;:~… "
 SEGMENT_SPLIT_PUNCTUATION = "，。！？、；：,.!?;:~…"
@@ -925,21 +928,67 @@ def _strip_low_information_segments(
     if len(source_segments) > 1:
         contextual_segments = DEFAULT_CONTEXTUAL_LOW_INFORMATION_SEGMENTS
 
+    def is_tail_noise_candidate(segment_text: str) -> bool:
+        normalized_segment = _normalize_asr_text(segment_text)
+        if not normalized_segment:
+            return True
+        if normalized_segment in DEFAULT_ALLOWED_SHORT_PHRASES:
+            return False
+        dense_segment = collapse_transcript_text(normalized_segment)
+        if not dense_segment:
+            return True
+        if len(dense_segment) <= 1:
+            return True
+        if len(dense_segment) <= 2 and not any(char.isdigit() for char in dense_segment):
+            return True
+        if len(dense_segment) >= 3 and len(set(dense_segment)) <= 2:
+            return True
+        return False
+
     cleaned_segments: list[str] = []
     low_information_count = 0
     meaningful_count = 0
+    segment_is_low_information: list[bool] = []
 
     for segment in source_segments:
-        if _is_low_information_segment(
+        is_low_information = _is_low_information_segment(
             segment,
             filler_words=filler_words,
             low_information_segments=low_information_segments,
             contextual_low_information_segments=contextual_segments,
-        ):
+        )
+        segment_is_low_information.append(is_low_information)
+        if is_low_information:
             low_information_count += 1
             continue
         cleaned_segments.append(segment)
         meaningful_count += 1
+
+    if meaningful_count > 0 and source_segments:
+        tail_start = len(source_segments)
+        tail_noise_count = 0
+        for index in range(len(source_segments) - 1, -1, -1):
+            if segment_is_low_information[index]:
+                tail_start = index
+                tail_noise_count += 1
+                continue
+            if tail_noise_count > 0 and is_tail_noise_candidate(source_segments[index]):
+                tail_start = index
+                tail_noise_count += 1
+                continue
+            break
+
+        if tail_noise_count >= 2 and tail_start < len(source_segments):
+            cleaned_segments = []
+            low_information_count = 0
+            meaningful_count = 0
+            for index, segment in enumerate(source_segments):
+                is_low_information = segment_is_low_information[index] or index >= tail_start
+                if is_low_information:
+                    low_information_count += 1
+                    continue
+                cleaned_segments.append(segment)
+                meaningful_count += 1
 
     return _join_transcript_segments(cleaned_segments), low_information_count, meaningful_count
 

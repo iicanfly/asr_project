@@ -288,6 +288,14 @@ class FilterResultTests(unittest.TestCase):
             "语音转写",
         )
 
+    def test_trims_long_filler_tail_after_meaningful_content(self):
+        self.assertEqual(
+            refine_asr_result_text(
+                "那。你好，现在在进行。现在是语音转写文本。次测试。包括一些重要。要约束。基于转写中的事。时进行总结。禁止。编造、转写中完全。没有提及的事件或。结论。嗯。嗯。嗯。嗯。嗯。嗯。嘘。嗯。"
+            ),
+            "现在在进行现在是语音转写文本次测试包括一些重要要约束基于转写中的事时进行总结禁止编造转写中完全没有提及的事件或结论",
+        )
+
     def test_keeps_standalone_short_valid_phrase(self):
         self.assertEqual(refine_asr_result_text("好的"), "好的")
         self.assertFalse(should_filter_asr_result("好的"))
