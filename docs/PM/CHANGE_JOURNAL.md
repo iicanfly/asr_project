@@ -485,3 +485,49 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 明早优先拿真实“旁边人小声插话”样本做同样的 gain sweep，对比它和主语音样本的分界差异。
+
+### 2026-05-10 / Commit 661cd1d
+- 主题：
+  - 实时转写第二十轮：离线事件级时间线分析。
+- 修改内容：
+  - `tools/analyze_realtime_audio.py` 新增事件级时间线输出，可展示每次 `process / drop / waiting / stop flush` 的时间窗口、buffer 时长、`speech_gate / tail_gate` 与音频特征。
+  - 工具默认模拟停止录音后的 `stop flush`，并修正了小数增益显示精度。
+  - 新增 `tests/test_analyze_realtime_audio.py`，覆盖 chunk 触发、强语音 stop flush、弱语音 stop flush 三类分析路径。
+- 目的：
+  - 减少明早拿真实录音调静音过滤时的盲调成本，先把“为什么被放行 / 为什么被丢弃”看清楚。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 现在已经能从离线回放中直接定位“第几秒开始从放行转向丢弃”，并看到对应 gate 标签与音频特征。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续补更接近真实“旁边人小声插话”的离线模拟方式，缩小真实样本缺口。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第二十一轮：前景/背景混音弱背景模拟。
+- 修改内容：
+  - `tools/analyze_realtime_audio.py` 新增前景/背景混音分析能力，支持：
+    - `--mix-background`
+    - `--mix-background-gains`
+    - `--mix-background-offset-seconds`
+    - `--mix-tail-silence-seconds`
+  - 可将一条主语音 wav 与另一条低增益背景 wav 叠加后回放，并继续复用现有时间线与 stop flush 分析。
+  - `tests/test_analyze_realtime_audio.py` 新增混音偏移、尾部静音与混音后 stop flush 分析的自动化测试。
+- 目的：
+  - 在缺少真实弱背景样本前，先补一个更接近“主讲人 + 旁边人小声插话”的离线验证手段。
+  - 为后续静音过滤门槛继续迭代提供更贴近目标场景的分析输入。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/analyze_realtime_audio.py --timeline --timeline-limit 10 --gains 1.0 --mix-background .\70.wav --mix-background-gains 0.06 0.03 --mix-background-offset-seconds 2.0 --mix-tail-silence-seconds 0.4 -- .\41.wav` 通过。
+  - `python tools/check_doc_corruption.py` 待本轮提交前执行。
+- 当前结果：
+  - 现在已经可以离线观察“主语音 + 低增益背景语音 + 尾部静音”组合场景下，chunk 与 stop flush 的分流表现。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 明早优先把真实弱背景样本带入同样的分析命令，对比混音模拟与真实回放之间的差异。

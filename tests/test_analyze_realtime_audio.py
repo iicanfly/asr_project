@@ -18,7 +18,28 @@ def pcm_window(value: int, sample_count: int) -> bytes:
     return b"".join(value.to_bytes(2, "little", signed=True) for _ in range(sample_count))
 
 
+def pcm_to_samples(pcm: bytes) -> list[int]:
+    return [
+        int.from_bytes(pcm[idx : idx + 2], "little", signed=True)
+        for idx in range(0, len(pcm), 2)
+    ]
+
+
 class RealtimeAudioAnalyzerTests(unittest.TestCase):
+    def test_mix_pcm_streams_applies_offset_and_tail_silence(self):
+        mixed = analyze_realtime_audio.mix_pcm_streams(
+            pcm_window(1000, 4),
+            pcm_window(500, 2),
+            foreground_gain=1.0,
+            background_gain=1.0,
+            background_offset_seconds=0.5,
+            tail_silence_seconds=0.25,
+            sample_rate=4,
+            bytes_per_sample=2,
+        )
+
+        self.assertEqual(pcm_to_samples(mixed), [1000, 1000, 1500, 1500, 0])
+
     def test_analyze_pcm_records_chunk_process_event(self):
         policy = RealtimeChunkPolicy(chunk_seconds=1.0, max_audio_seconds=5.0)
         strong_audio = pcm_window(900, 16000)
@@ -74,6 +95,30 @@ class RealtimeAudioAnalyzerTests(unittest.TestCase):
         self.assertEqual(result.stop_flush_event.action, "stop_drop")
         self.assertEqual(result.stop_flush_event.reason, "stop_flush_drop_weak_audio")
         self.assertEqual(result.stop_flush_event.speech_gate_reason, "no_usable_speech")
+
+    def test_mixed_scene_keeps_tail_silence_for_stop_flush_analysis(self):
+        policy = RealtimeChunkPolicy(chunk_seconds=10.0, stop_flush_min_seconds=0.35)
+        mixed = analyze_realtime_audio.mix_pcm_streams(
+            pcm_window(900, int(16000 * 0.45)),
+            pcm_window(80, int(16000 * 0.20)),
+            foreground_gain=1.0,
+            background_gain=1.0,
+            background_offset_seconds=0.0,
+            tail_silence_seconds=0.40,
+            sample_rate=16000,
+            bytes_per_sample=2,
+        )
+
+        result = analyze_realtime_audio.analyze_pcm(
+            mixed,
+            policy,
+            packet_samples=512,
+            simulate_stop_flush=True,
+        )
+
+        self.assertIsNotNone(result.stop_flush_event)
+        self.assertEqual(result.stop_flush_event.reason, "stop_flush_pending_audio")
+        self.assertGreaterEqual(result.stop_flush_event.stream_end_seconds, 0.85)
 
 
 if __name__ == "__main__":

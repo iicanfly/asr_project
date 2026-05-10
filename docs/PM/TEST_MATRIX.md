@@ -141,6 +141,17 @@
     - 强语音尾段的 `stop_flush_pending_audio`；
     - 弱语音尾段的 `stop_flush_drop_weak_audio`。
 
+### 2026-05-10 / 前景背景混音补充
+- 工具：
+  - `python tools/analyze_realtime_audio.py --gains 1.0 --mix-background 70.wav --mix-background-gains 0.06 0.03 --mix-background-offset-seconds 2.0 --mix-tail-silence-seconds 0.4 -- 41.wav`
+- 用途：
+  - 把主语音样本与另一条低增益背景语音样本混合回放，近似模拟“旁边人小声插话”或“背景说话叠加主说话人”的场景。
+  - 在缺少真实弱背景样本前，优先用它观察规则在“主语音 + 弱背景语音 + 尾静音”组合场景下是否会明显跑偏。
+- 自动化补充检查：
+  - `tests/test_analyze_realtime_audio.py` 应覆盖：
+    - 混音时的偏移时间与尾部静音拼接；
+    - 混音后 stop flush 时间窗仍可被正确分析。
+
 ### 2026-05-10 / gain sweep 补充
 - 工具：
   - `python tools/analyze_realtime_audio.py --gains 1.0 0.5 0.25 0.125 -- <wav>`

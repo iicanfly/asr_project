@@ -60,6 +60,18 @@ def format_gain(gain: float) -> str:
     return f"{gain:.4g}"
 
 
+def seconds_to_pcm_bytes(
+    seconds: float,
+    *,
+    sample_rate: int,
+    bytes_per_sample: int,
+) -> int:
+    if seconds <= 0:
+        return 0
+    sample_count = int(round(seconds * sample_rate))
+    return max(0, sample_count * bytes_per_sample)
+
+
 def load_wav_as_mono_pcm16(path: Path, target_rate: int = 16000) -> bytes:
     with wave.open(str(path), "rb") as wf:
         channels = wf.getnchannels()
@@ -85,6 +97,38 @@ def apply_gain(pcm: bytes, gain: float) -> bytes:
     if gain == 1.0:
         return pcm
     return audioop.mul(pcm, 2, gain)
+
+
+def mix_pcm_streams(
+    foreground_pcm: bytes,
+    background_pcm: bytes,
+    *,
+    foreground_gain: float = 1.0,
+    background_gain: float = 1.0,
+    background_offset_seconds: float = 0.0,
+    tail_silence_seconds: float = 0.0,
+    sample_rate: int = 16000,
+    bytes_per_sample: int = 2,
+) -> bytes:
+    foreground_pcm = apply_gain(foreground_pcm, foreground_gain)
+    background_pcm = apply_gain(background_pcm, background_gain)
+
+    background_offset_bytes = seconds_to_pcm_bytes(
+        background_offset_seconds,
+        sample_rate=sample_rate,
+        bytes_per_sample=bytes_per_sample,
+    )
+    tail_silence_bytes = seconds_to_pcm_bytes(
+        tail_silence_seconds,
+        sample_rate=sample_rate,
+        bytes_per_sample=bytes_per_sample,
+    )
+
+    aligned_background = (b"\x00" * background_offset_bytes) + background_pcm
+    total_length = max(len(foreground_pcm), len(aligned_background)) + tail_silence_bytes
+    foreground_aligned = foreground_pcm.ljust(total_length, b"\x00")
+    background_aligned = aligned_background.ljust(total_length, b"\x00")
+    return audioop.add(foreground_aligned, background_aligned, bytes_per_sample)
 
 
 def decision_to_action(decision: ChunkDecision, *, stop_flush: bool = False) -> str:
@@ -237,6 +281,46 @@ def analyze_file(
     return result
 
 
+def analyze_mixed_files(
+    foreground_path: Path,
+    background_path: Path,
+    policy: RealtimeChunkPolicy,
+    packet_samples: int,
+    *,
+    foreground_gain: float = 1.0,
+    background_gain: float = 1.0,
+    background_offset_seconds: float = 0.0,
+    tail_silence_seconds: float = 0.0,
+    simulate_stop_flush: bool = True,
+) -> AudioAnalysisResult:
+    foreground_pcm = load_wav_as_mono_pcm16(foreground_path, target_rate=policy.sample_rate)
+    background_pcm = load_wav_as_mono_pcm16(background_path, target_rate=policy.sample_rate)
+    mixed_pcm = mix_pcm_streams(
+        foreground_pcm,
+        background_pcm,
+        foreground_gain=foreground_gain,
+        background_gain=background_gain,
+        background_offset_seconds=background_offset_seconds,
+        tail_silence_seconds=tail_silence_seconds,
+        sample_rate=policy.sample_rate,
+        bytes_per_sample=policy.bytes_per_sample,
+    )
+    result = analyze_pcm(
+        mixed_pcm,
+        policy,
+        packet_samples=packet_samples,
+        gain=1.0,
+        simulate_stop_flush=simulate_stop_flush,
+    )
+    result.label = (
+        f"{foreground_path.name} @ gain={format_gain(foreground_gain)} "
+        f"+ bg({background_path.name} @ {format_gain(background_gain)}, "
+        f"offset={background_offset_seconds:.2f}s, tail={tail_silence_seconds:.2f}s)"
+    )
+    result.path = foreground_path
+    return result
+
+
 def format_counter(counter: Counter) -> str:
     if not counter:
         return "-"
@@ -303,19 +387,64 @@ def main() -> int:
         action="store_true",
         help="Do not simulate the final stop-recording flush for leftover audio",
     )
+    parser.add_argument(
+        "--mix-background",
+        help="Optional background wav to mix into every primary path for weak-background simulation",
+    )
+    parser.add_argument(
+        "--mix-background-gains",
+        nargs="+",
+        type=float,
+        default=[0.06],
+        help="Background gain multipliers used with --mix-background (default: 0.06)",
+    )
+    parser.add_argument(
+        "--mix-background-offset-seconds",
+        type=float,
+        default=0.0,
+        help="Offset in seconds before the background wav starts inside the mixed scene",
+    )
+    parser.add_argument(
+        "--mix-tail-silence-seconds",
+        type=float,
+        default=0.0,
+        help="Optional silence appended after the mixed scene to make stop-flush / tail behavior easier to inspect",
+    )
     args = parser.parse_args()
 
     policy = RealtimeChunkPolicy()
+    background_path = Path(args.mix_background).expanduser().resolve() if args.mix_background else None
     for raw_path in args.paths:
         path = Path(raw_path).expanduser().resolve()
-        for gain in args.gains:
-            result = analyze_file(
-                path,
-                policy,
-                packet_samples=args.packet_samples,
-                gain=gain,
-                simulate_stop_flush=not args.no_stop_flush,
-            )
+        if background_path:
+            analysis_inputs = [
+                analyze_mixed_files(
+                    path,
+                    background_path,
+                    policy,
+                    packet_samples=args.packet_samples,
+                    foreground_gain=gain,
+                    background_gain=background_gain,
+                    background_offset_seconds=args.mix_background_offset_seconds,
+                    tail_silence_seconds=args.mix_tail_silence_seconds,
+                    simulate_stop_flush=not args.no_stop_flush,
+                )
+                for gain in args.gains
+                for background_gain in args.mix_background_gains
+            ]
+        else:
+            analysis_inputs = [
+                analyze_file(
+                    path,
+                    policy,
+                    packet_samples=args.packet_samples,
+                    gain=gain,
+                    simulate_stop_flush=not args.no_stop_flush,
+                )
+                for gain in args.gains
+            ]
+
+        for result in analysis_inputs:
             print(f"=== {result.label} ===")
             print(f"duration_seconds={result.duration_seconds:.2f}")
             print(
