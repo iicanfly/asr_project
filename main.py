@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
 from flask_socketio import SocketIO, emit
 from openai import OpenAI

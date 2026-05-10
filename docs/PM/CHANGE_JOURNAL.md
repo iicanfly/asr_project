@@ -622,3 +622,20 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 明早优先对一段真实误触发片段同时看线上日志与离线 JSON，确认 run 指标是否同方向变化。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - Python 3.9 运行兼容性修复。
+- 修改内容：
+  - 在 `main.py` 顶部补充 `from __future__ import annotations`。
+- 目的：
+  - 修复 Python 3.9 下 `str | None` 注解在模块导入时被立即求值，导致 `TypeError: unsupported operand type(s) for |` 的启动报错。
+- 验证方式：
+  - `python -m py_compile .\main.py` 通过。
+  - 当前 shell 直接 `import main` 时，已越过注解报错点；后续阻塞变为环境中缺少 `flask_socketio` 包，而不再是类型注解兼容性错误。
+- 当前结果：
+  - 这次报出的 `| None` 兼容性问题已修复。
+- 用户反馈：
+  - 用户已明确反馈当前版本启动时出现该报错。
+- 后续动作：
+  - 若用户的 asr 环境仍提示缺包，再继续处理依赖问题。
