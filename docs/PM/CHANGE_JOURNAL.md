@@ -274,3 +274,22 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 继续观察是否还存在“不同 result_id 但语义重复”的边界抖动场景。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十轮：缓存恢复后的消息 ID 计数器同步。
+- 修改内容：
+  - 在 `static/js/app.js` 中新增 `rememberMessageId()`，让前端在使用显式消息 ID 时同步推进 `messageIdCounter`。
+  - `addMessageUI()` 与 `loadCache()` 现在都会确保恢复出来的历史消息 ID 被计数器感知，避免后续新消息复用旧 ID。
+- 目的：
+  - 修复“从本地缓存恢复后，新的实时消息可能和旧消息撞 ID”这一长期会话一致性风险。
+  - 进一步稳住编辑、删除、替换等依赖消息 ID 的前端操作。
+- 验证方式：
+  - `node -e "new Function(require('fs').readFileSync('static/js/app.js','utf8')); console.log('app.js syntax OK')"` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 缓存恢复后，新增消息会继续使用更大的新 ID，而不是从 1 重新开始碰撞旧消息。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 继续观察长会话恢复、编辑和删除路径是否还有前端 ID 级别的一致性边界问题。

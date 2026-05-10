@@ -515,9 +515,15 @@ function buildTranscriptEntry(data, messageId, text, timeStr) {
             };
         }
 
-        function rememberResultId(resultId) {
+function rememberResultId(resultId) {
             if (!resultId) return;
             seenResultIds.add(resultId);
+        }
+
+        function rememberMessageId(messageId) {
+            const numericId = Number(messageId);
+            if (!Number.isFinite(numericId) || numericId <= 0) return;
+            messageIdCounter = Math.max(messageIdCounter, numericId);
         }
 
         function rebuildSeenResultIds() {
@@ -654,7 +660,7 @@ function handleASRResult(data) {
             document.getElementById('clear-btn').style.display = 'block';
         }
 
-        function addMessageUI(speaker, text, time, merge = false, messageId = null) {
+function addMessageUI(speaker, text, time, merge = false, messageId = null) {
             const list = document.getElementById('transcript-list');
             const isSpeaker2 = speaker.includes('Speaker_2') || speaker.includes('2');
 
@@ -669,7 +675,9 @@ function handleASRResult(data) {
                 // 新建消息气泡
                 const div = document.createElement('div');
                 div.className = `message ${isSpeaker2 ? 'speaker-2' : 'speaker-1'}`;
-                div.dataset.messageId = messageId || ++messageIdCounter;
+                const resolvedMessageId = messageId || ++messageIdCounter;
+                rememberMessageId(resolvedMessageId);
+                div.dataset.messageId = resolvedMessageId;
 
                 div.innerHTML = `
                     <div class="message-actions">
@@ -1696,6 +1704,7 @@ function persistCacheNow() {
                             const timeStr = d.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                             // 如果缓存的数据有 ID，使用它；否则生成新的
                             const msgId = d.id || ++messageIdCounter;
+                            rememberMessageId(msgId);
                             d.id = msgId; // 确保数据有 ID
 
                             addMessageUI(d.speaker, d.content, timeStr, false, msgId);
