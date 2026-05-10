@@ -119,3 +119,11 @@
   - 如果活跃帧不少，但有声帧只占活跃帧中的很小一部分，则不应再走 `sustained_soft_speech` 兜底。
 - 手工补充检查：
   - 明早真实录音时，结合 `density` 与 `speech_gate` 观察：误触发背景音是否集中出现在低 density 片段。
+
+### 2026-05-10 / 离线 wav 回放补充
+- 工具：
+  - `python tools/analyze_realtime_audio.py <wav1> <wav2> ...`
+- 用途：
+  - 按前端真实推流节奏离线回放 wav，快速观察当前门槛下的 `process/drop/waiting` 与 gate reason 命中情况。
+- 当前已知：
+  - 本地 `41.wav / 70.wav / 97.wav` 当前都属于 `strong_signal` 样本，只能验证强主语音链路，暂时不能替代弱背景样本回归。

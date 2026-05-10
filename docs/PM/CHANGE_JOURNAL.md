@@ -422,3 +422,23 @@
   - 待明早真实录音测试确认。
 - 后续动作：
   - 继续结合真实录音观察 density 与误触发之间是否存在明显相关性。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
+  - 实时转写第十七轮：离线 wav 门槛回放工具。
+- 修改内容：
+  - 新增 `tools/analyze_realtime_audio.py`，可按前端 512-sample 推流节奏离线回放 wav，并统计 `process/drop/waiting`、`speech_gate`、`tail_gate` 等命中情况。
+  - 用本地 `41.wav / 70.wav / 97.wav` 跑了一轮分析，当前三份样本都属于 `strong_signal`，且都只在 `chunk_duration_reached` 时切出，没有触发弱语音/尾静音相关分支。
+- 目的：
+  - 给明早真实录音调参前，先补一个可复用的离线分析抓手，避免继续只靠合成样本盲调。
+  - 让后续新增的真实弱背景样本可以快速回放，直接验证每轮静音过滤规则的效果。
+- 验证方式：
+  - `python tools/analyze_realtime_audio.py 41.wav 70.wav 97.wav` 通过。
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tools\analyze_realtime_audio.py` 通过。
+  - `python tools/check_doc_corruption.py` 通过。
+- 当前结果：
+  - 现有 3 个本地 wav 样本暂时都更像“强主语音样本”，还不足以验证弱背景过滤是否真正到位。
+- 用户反馈：
+  - 待明早真实录音测试确认。
+- 后续动作：
+  - 明早优先补采或筛出一批“旁边人小声插话 / 低音量背景说话”的真实样本，再用该工具回放校准门槛。
