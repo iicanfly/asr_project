@@ -137,6 +137,7 @@ USE_INTRANET=False
 - `docs/PM/TEST_MATRIX.md`
 - `docs/PM/SESSION_SUMMARY.md`
 - `docs/PM/CHANGE_JOURNAL.md`
+- `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
 
 ### 最后看系统与代码结构
 
@@ -146,6 +147,10 @@ USE_INTRANET=False
 - `docs/PM/CONFIG_MAP.md`
 - `docs/PM/API_FLOW.md`
 - `docs/PM/KNOWN_ISSUES.md`
+
+如果接下来要继续做“实时转写联调 / 口测回归 / 时延排查 / 回写异常排查”，默认还应额外先看：
+
+- `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
 
 ---
 
@@ -196,4 +201,3 @@ python tools/check_doc_corruption.py
 - 当前仓库同时存在 Web 与 Electron 两套前端入口，修改前端时需要确认影响范围
 - 内外网 ASR 调用方式不同，涉及 ASR 链路时必须特别谨慎
 - 当前最核心的优化对象仍然是实时转写，不要让次要工作稀释主线
-

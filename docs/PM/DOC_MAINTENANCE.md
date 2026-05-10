@@ -70,5 +70,7 @@
   - `AGENTS.md`
   - `docs/PM/CODEX_PLAYBOOK.md`
   - `docs/PM/DOC_MAINTENANCE.md`
+- 如果当前任务属于“实时转写调试 / 联调 / 口测回归 / 回写异常 / 前后端时延排查”，还应默认先读取：
+  - `docs/PM/REALTIME_DEBUG_PLAYBOOK.md`
 - 完成任务前，默认做一次“文档是否需要同步更新”的检查。
 - 如果需要更新文档，应把这件事视为任务的一部分，而不是额外可选步骤。
