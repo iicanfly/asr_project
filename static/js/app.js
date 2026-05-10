@@ -702,11 +702,12 @@ function rememberResultId(resultId) {
                 target = transcriptData.find(item => item.serverResultId === data.replace_target_id) || null;
             }
 
-            if (!target && isRewriteResultType(data.result_type) && data.segment_id) {
+            if (!target && data.segment_id) {
                 target = findSegmentReplacementTarget(data.segment_id);
                 if (target) {
-                    console.warn('rewrite 未命中 replace_target_id，已回退为按 segment_id 替换:', {
+                    console.warn('未命中 replace_target_id，已回退为按 segment_id 替换:', {
                         replace_target_id: data.replace_target_id,
+                        result_type: data.result_type,
                         segment_id: data.segment_id,
                         fallback_message_id: target.id
                     });
