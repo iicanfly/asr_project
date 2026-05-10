@@ -280,8 +280,6 @@ class FilterResultTests(unittest.TestCase):
         self.assertTrue(should_filter_asr_result("嗯"))
         self.assertTrue(should_filter_asr_result("嗯啊"))
         self.assertTrue(should_filter_asr_result("哈"))
-        self.assertTrue(should_filter_asr_result("你好"))
-        self.assertTrue(should_filter_asr_result("谢谢"))
 
     def test_keeps_normal_sentence(self):
         self.assertFalse(should_filter_asr_result("今天下午两点开会"))
@@ -300,10 +298,10 @@ class FilterResultTests(unittest.TestCase):
 
     def test_filters_low_information_hallucination_sequence(self):
         self.assertTrue(
-            should_filter_asr_result("What's that?Was one.one。嗯。嗯。Huh.嗯。Yes.你好。Yeah。Thank you。嗯。")
+            should_filter_asr_result("嗯。嗯。Huh。Yeah。Thank you。嗯。")
         )
 
-    def test_strips_low_information_segments_but_keeps_meaningful_sentence(self):
+    def test_strips_standalone_filler_segments_but_keeps_meaningful_sentence(self):
         self.assertEqual(
             refine_asr_result_text("Yeah. Thank you. 嗯。现在我看这个静音。并没有被过滤掉。嗯。"),
             "现在我看这个静音并没有被过滤掉",
@@ -312,23 +310,29 @@ class FilterResultTests(unittest.TestCase):
             should_filter_asr_result("Yeah. Thank you. 嗯。现在我看这个静音。并没有被过滤掉。嗯。")
         )
 
-    def test_strips_contextual_low_information_tail_segments(self):
+    def test_strips_individual_filler_segments_only(self):
         self.assertEqual(
             refine_asr_result_text("Just.呃，现在。在测试的是。啊。语音转写。嗯。嗯。Thank you."),
             "现在在测试的是语音转写",
         )
         self.assertEqual(
             refine_asr_result_text("Okay.对。是的吧。那啥。语音转写。嗯。"),
-            "语音转写",
+            "对是的吧那啥语音转写",
         )
 
-    def test_trims_long_filler_tail_after_meaningful_content(self):
+    def test_keeps_non_filler_words_unchanged_when_removing_fillers(self):
         self.assertEqual(
             refine_asr_result_text(
                 "那。你好，现在在进行。现在是语音转写文本。次测试。包括一些重要。要约束。基于转写中的事。时进行总结。禁止。编造、转写中完全。没有提及的事件或。结论。嗯。嗯。嗯。嗯。嗯。嗯。嘘。嗯。"
             ),
-            "现在在进行现在是语音转写文本次测试包括一些重要要约束基于转写中的事时进行总结禁止编造转写中完全没有提及的事件或结论",
+            "那你好现在在进行现在是语音转写文本次测试包括一些重要要约束基于转写中的事时进行总结禁止编造转写中完全没有提及的事件或结论",
         )
+
+    def test_keeps_standalone_non_filler_short_phrases(self):
+        self.assertEqual(refine_asr_result_text("你好"), "你好")
+        self.assertEqual(refine_asr_result_text("谢谢"), "谢谢")
+        self.assertFalse(should_filter_asr_result("你好"))
+        self.assertFalse(should_filter_asr_result("谢谢"))
 
     def test_keeps_standalone_short_valid_phrase(self):
         self.assertEqual(refine_asr_result_text("好的"), "好的")

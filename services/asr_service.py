@@ -24,46 +24,22 @@ DEFAULT_LOW_INFORMATION_SEGMENTS = (
     "诶",
     "欸",
     "哈",
-    "你好",
-    "您好",
-    "谢谢",
-    "多谢",
+    "唉",
     "嘘",
     "yes",
     "yeah",
-    "yep",
     "ok",
     "okay",
-    "hello",
-    "hi",
     "huh",
     "uh",
     "uhh",
     "thanks",
     "thank you",
     "thankyou",
-    "what's that",
-    "whats that",
     "what",
     "just",
-    "right",
-    "alright",
-    "well",
     "was one",
     "one",
-)
-DEFAULT_CONTEXTUAL_LOW_INFORMATION_SEGMENTS = (
-    "那",
-    "对",
-    "好的",
-    "是的",
-    "是的吧",
-    "好",
-    "那啥",
-    "那个",
-    "ok",
-    "okay",
-    "你好",
 )
 BOUNDARY_PUNCTUATION = "，。！？、；：,.!?;:~… "
 SEGMENT_SPLIT_PUNCTUATION = "，。！？、；：,.!?;:~…"
@@ -1086,7 +1062,6 @@ def _is_low_information_segment(
     text: str,
     filler_words: Sequence[str] = DEFAULT_FILLER_WORDS,
     low_information_segments: Sequence[str] = DEFAULT_LOW_INFORMATION_SEGMENTS,
-    contextual_low_information_segments: Sequence[str] = (),
 ) -> bool:
     normalized = _normalize_information_segment(text)
     if not normalized:
@@ -1094,14 +1069,6 @@ def _is_low_information_segment(
 
     low_info_set = {_normalize_information_segment(segment) for segment in low_information_segments if segment.strip()}
     if normalized in low_info_set:
-        return True
-
-    contextual_set = {
-        _normalize_information_segment(segment)
-        for segment in contextual_low_information_segments
-        if segment.strip()
-    }
-    if contextual_set and normalized in contextual_set:
         return True
 
     dense_text = collapse_transcript_text(normalized)
@@ -1132,71 +1099,21 @@ def _strip_low_information_segments(
     low_information_segments: Sequence[str] = DEFAULT_LOW_INFORMATION_SEGMENTS,
 ) -> tuple[str, int, int]:
     source_segments = _split_transcript_segments(text)
-    contextual_segments: Sequence[str] = ()
-    if len(source_segments) > 1:
-        contextual_segments = DEFAULT_CONTEXTUAL_LOW_INFORMATION_SEGMENTS
-
-    def is_tail_noise_candidate(segment_text: str) -> bool:
-        normalized_segment = _normalize_asr_text(segment_text)
-        if not normalized_segment:
-            return True
-        if normalized_segment in DEFAULT_ALLOWED_SHORT_PHRASES:
-            return False
-        dense_segment = collapse_transcript_text(normalized_segment)
-        if not dense_segment:
-            return True
-        if len(dense_segment) <= 1:
-            return True
-        if len(dense_segment) <= 2 and not any(char.isdigit() for char in dense_segment):
-            return True
-        if len(dense_segment) >= 3 and len(set(dense_segment)) <= 2:
-            return True
-        return False
 
     cleaned_segments: list[str] = []
     low_information_count = 0
     meaningful_count = 0
-    segment_is_low_information: list[bool] = []
 
     for segment in source_segments:
-        is_low_information = _is_low_information_segment(
+        if _is_low_information_segment(
             segment,
             filler_words=filler_words,
             low_information_segments=low_information_segments,
-            contextual_low_information_segments=contextual_segments,
-        )
-        segment_is_low_information.append(is_low_information)
-        if is_low_information:
+        ):
             low_information_count += 1
             continue
         cleaned_segments.append(segment)
         meaningful_count += 1
-
-    if meaningful_count > 0 and source_segments:
-        tail_start = len(source_segments)
-        tail_noise_count = 0
-        for index in range(len(source_segments) - 1, -1, -1):
-            if segment_is_low_information[index]:
-                tail_start = index
-                tail_noise_count += 1
-                continue
-            if tail_noise_count > 0 and is_tail_noise_candidate(source_segments[index]):
-                tail_start = index
-                tail_noise_count += 1
-                continue
-            break
-
-        if tail_noise_count >= 2 and tail_start < len(source_segments):
-            cleaned_segments = []
-            low_information_count = 0
-            meaningful_count = 0
-            for index, segment in enumerate(source_segments):
-                is_low_information = segment_is_low_information[index] or index >= tail_start
-                if is_low_information:
-                    low_information_count += 1
-                    continue
-                cleaned_segments.append(segment)
-                meaningful_count += 1
 
     return _join_transcript_segments(cleaned_segments), low_information_count, meaningful_count
 
@@ -1256,7 +1173,9 @@ def refine_asr_result_text(
         refined = trailing_pattern.sub("", refined).strip()
         refined = refined.strip(BOUNDARY_PUNCTUATION).strip()
 
-    cleaned_text, _, meaningful_count = _strip_low_information_segments(refined, filler_words=filler_words)
+    cleaned_text, low_information_count, meaningful_count = _strip_low_information_segments(refined, filler_words=filler_words)
+    if meaningful_count == 0 and low_information_count > 0:
+        return ""
     if meaningful_count > 0 and cleaned_text:
         refined = cleaned_text
     return _normalize_asr_text(refined)
@@ -1273,26 +1192,8 @@ def should_filter_asr_result(text: str, filler_words: Sequence[str] = DEFAULT_FI
     if refined_text in DEFAULT_ALLOWED_SHORT_PHRASES:
         return False
 
-    cleaned_text, low_information_count, meaningful_count = _strip_low_information_segments(
-        refined_text,
-        filler_words=filler_words,
-    )
-    if meaningful_count == 0 and low_information_count > 0:
-        return True
-    if cleaned_text:
-        refined_text = cleaned_text
-
     dense_text = collapse_transcript_text(refined_text)
     if not dense_text:
-        return True
-
-    filler_count = sum(dense_text.count(word) for word in filler_words)
-    if len(dense_text) > 0 and filler_count / len(dense_text) >= 0.6:
-        return True
-    if len(dense_text) <= 4 and filler_count >= max(1, len(dense_text) - 1):
-        return True
-
-    if len(dense_text) >= 3 and len(set(dense_text)) <= 2:
         return True
     if len(dense_text) < 2:
         return True

@@ -296,6 +296,34 @@
 
 ### 2026-05-10 / Commit 待填写
 - 主题：
+  - 将语气词清洗策略收敛为“只删除独立片段，不整句过滤”。
+- 修改内容：
+  - 在 `services/asr_service.py` 中收缩 `DEFAULT_LOW_INFORMATION_SEGMENTS`，移除较多容易误伤正常内容的复杂上下文词。
+  - 简化 `_strip_low_information_segments()`，不再做复杂上下文型尾巴 patch，只删除独立片段中的语气词 / 幻觉词。
+  - 调整 `refine_asr_result_text()` 与 `should_filter_asr_result()`：
+    - 若删完独立片段后仍有正文，则保留正文；
+    - 只有整句删空时，才整体不输出。
+  - 在 `tests/test_asr_service.py` 中更新为新的预期行为。
+- 目的：
+  - 降低之前“整句低信息过滤”和复杂上下文 patch 带来的不可控误伤风险。
+  - 更贴近用户要求的最小策略：只删除单个语气词片段，其他文字不动。
+- 验证方式：
+  - `python -m unittest discover -s .\tests -p "test_*.py"`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py .\tools\analyze_realtime_audio.py`
+  - `python tools/check_doc_corruption.py`
+- 当前结果：
+  - 自动化 54 项通过；
+  - 当前文本层策略已明显简化，更适合继续在 simplified pipeline 基础上迭代。
+- 用户反馈：
+  - 用户明确要求“单个单个词语气词进行去除，别的字不变化，而不是整一句过滤掉”。
+- 后续动作：
+  - 继续基于真实录音观察：
+    - 独立语气词是否明显减少；
+    - partial 是否仍然足够快；
+    - rewrite 是否仍然不够可见。
+
+### 2026-05-10 / Commit 待填写
+- 主题：
   - 实时转写第三轮：小段结果到大段结果的替换回写最小闭环。
 - 修改内容：
   - 在 `services/asr_service.py` 中新增 `SegmentRewritePolicy`、`SegmentRewriteDecision` 与 `decide_segment_rewrite()`，把段级回写触发条件抽成可测试规则。
