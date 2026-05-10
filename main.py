@@ -236,6 +236,7 @@ class SessionManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._sessions = {}
+            cls._instance._recently_stopped = {}
             cls._instance._lock = threading.Lock()
         return cls._instance
 
@@ -263,6 +264,24 @@ class SessionManager:
     def get(self, sid):
         with self._lock:
             return self._sessions.get(sid)
+
+    def mark_recently_stopped(self, sid, cooldown_seconds=3.0):
+        with self._lock:
+            self._recently_stopped[sid] = time.time() + cooldown_seconds
+
+    def clear_recently_stopped(self, sid):
+        with self._lock:
+            self._recently_stopped.pop(sid, None)
+
+    def should_ignore_audio(self, sid):
+        with self._lock:
+            expires_at = self._recently_stopped.get(sid)
+            if expires_at is None:
+                return False
+            if expires_at < time.time():
+                self._recently_stopped.pop(sid, None)
+                return False
+            return True
 
     def remove(self, sid):
         with self._lock:
@@ -582,12 +601,33 @@ def on_connect():
 def on_disconnect():
     sid = request.sid
     logger.info(f"Socket.IO 客户端已断开: {sid}")
+    session_mgr.mark_recently_stopped(sid)
     cleanup_realtime_session(sid)
+
+
+@socketio.on("start_recording")
+def on_start_recording(data=None):
+    sid = request.sid
+    session_mgr.clear_recently_stopped(sid)
+    stale_session = session_mgr.get(sid)
+    if stale_session and not stale_session.get('processing', False):
+        logger.info("收到 start_recording，清理残留 session sid=%s", sid)
+        cleanup_realtime_session(sid)
+    logger.info("收到 start_recording sid=%s data=%s", sid, data or {})
 
 
 @socketio.on("audio_stream")
 def on_audio_stream(data):
     sid = request.sid
+    existing_session = session_mgr.get(sid)
+    if existing_session and existing_session.get('stop_requested'):
+        logger.info("Ignoring audio_stream after stop request sid=%s bytes=%s", sid, len(data) if isinstance(data, bytes) else "invalid")
+        return
+
+    if session_mgr.should_ignore_audio(sid):
+        logger.info("Ignoring late audio_stream during stop cooldown sid=%s bytes=%s", sid, len(data) if isinstance(data, bytes) else "invalid")
+        return
+
     session = session_mgr.get_or_create(sid)
 
     if not isinstance(data, bytes):
@@ -656,6 +696,7 @@ def on_audio_stream(data):
 def on_stop_recording():
     sid = request.sid
     session = session_mgr.get(sid)
+    session_mgr.mark_recently_stopped(sid)
     if session:
         pending_seconds = len(session['buffer']) / (16000 * 2)
         logger.info(

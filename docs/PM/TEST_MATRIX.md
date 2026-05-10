@@ -234,3 +234,13 @@
   - `no_usable_speech` 是否还会被 simplified fallback 错误放行
   - 尾静音后的非语音短尾巴是否被直接丢弃
   - `tail_short_speech_detected` 是否仍保留对极短真实语音的兜底
+
+## 2026-05-10 / 录音停止链路回归
+- 手工验证项：
+  - 点击“停止录音 / 继续录音”后，`temp_audio/stream_recording_*.pcm` 文件大小应很快停止增长
+  - 点击停止后，后端不应再继续收到并写入晚到的 `audio_stream`
+  - 同一 socket 会话在 stop 之后的残余音频包，必须被忽略，不能偷偷创建新 session 或继续污染旧录音
+- 本轮新增防护：
+  - 前端新增 `start_recording` 握手
+  - 前端停止时显式失效旧 recording generation，并断开 `processor/sourceNode/mediaStream/audioContext`
+  - 后端对 `stop_requested` 后的音频包和 stop 后短时间内的晚到音频包直接忽略

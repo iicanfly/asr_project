@@ -521,3 +521,11 @@
   - 多条样本中的 `simplified_fallback_*` 已被消除
   - 对应增加为 `simplified_drop_non_speech_after_chunk_duration_reached` / `simplified_drop_non_speech_after_tail_silence_detected`
   - 说明本轮收紧主要打在“非语音被误放行”而不是“正常强语音”
+
+## 2026-05-10 / 新发现：录音停止链路污染实时样本
+- 用户反馈：点击停止录音后，`stream_recording_20260510_204811.pcm` 仍继续增长，从约 300KB 增长到 2000KB 以上。
+- 这说明当时的问题不只是门控阈值，而是“停止录音后仍有残余 `audio_stream` 持续写入后端”。
+- 当前判断出的结构性风险有两层：
+  1. 前端停止时，旧的音频处理链和回调失效不够彻底
+  2. 后端在 `stop_recording` 后，仍可能接收并处理晚到音频包；这些包甚至可能在 session 清理后重新污染录音
+- 因此 `stream_recording_20260510_204811.pcm` 不应被直接视作纯净的门控校准样本；它更适合拿来回归“停止链路是否收干净”。

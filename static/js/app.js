@@ -1,8 +1,10 @@
 let isRecording = false;
         let audioContext = null;
         let processor = null;
+        let sourceNode = null;
         let mediaStream = null;
         let socket = null;
+        let recordingGeneration = 0;
         let transcriptData = [];
         let startTime = 0;
         let timerInterval = null;
@@ -264,7 +266,7 @@ let messageIdCounter = 0;
             if (!isRecording) {
                 await startRecording();
             } else {
-                stopRecording();
+                await stopRecording();
             }
         }
 
@@ -296,9 +298,10 @@ let messageIdCounter = 0;
                     document.getElementById('asr-status').classList.add('status-error');
                 }
 
-                await setupAudioProcessing();
-
                 isRecording = true;
+                const runId = ++recordingGeneration;
+                emitStartRecording();
+                await setupAudioProcessing(runId);
                 document.getElementById('record-text').innerText = '停止录音';
                 document.getElementById('record-btn').classList.replace('btn-danger', 'btn-primary');
                 document.getElementById('record-icon').innerHTML = '<span class="recording-pulse"></span>';
@@ -319,16 +322,16 @@ let messageIdCounter = 0;
             }
         }
 
-        async function setupAudioProcessing() {
+        async function setupAudioProcessing(runId) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-            const source = audioContext.createMediaStreamSource(mediaStream);
+            sourceNode = audioContext.createMediaStreamSource(mediaStream);
 
             try {
                 await audioContext.audioWorklet.addModule('/static/js/audio-processor.js');
                 processor = new AudioWorkletNode(audioContext, 'audio-processor');
 
                 processor.port.onmessage = (e) => {
-                    if (!isRecording) return;
+                    if (!isRecording || runId !== recordingGeneration) return;
 
                     const inputData = e.data;
 
@@ -342,13 +345,13 @@ let messageIdCounter = 0;
                     updateVisualizer(inputData);
                 };
 
-                source.connect(processor);
+                sourceNode.connect(processor);
             } catch (err) {
                 console.warn('AudioWorklet 不可用，回退到 ScriptProcessorNode:', err);
                 processor = audioContext.createScriptProcessor(512, 1, 1);
 
                 processor.onaudioprocess = (e) => {
-                    if (!isRecording) return;
+                    if (!isRecording || runId !== recordingGeneration) return;
 
                     const inputData = e.inputBuffer.getChannelData(0);
 
@@ -362,8 +365,17 @@ let messageIdCounter = 0;
                     updateVisualizer(inputData);
                 };
 
-                source.connect(processor);
+                sourceNode.connect(processor);
                 processor.connect(audioContext.destination);
+            }
+        }
+
+        function emitStartRecording() {
+            if (socket && socket.connected) {
+                socket.emit('start_recording', {
+                    reason: 'manual_start',
+                    client_time: new Date().toISOString()
+                });
             }
         }
 
@@ -376,13 +388,51 @@ let messageIdCounter = 0;
             }
         }
 
-function stopRecording() {
+async function stopRecording() {
             isRecording = false;
+            recordingGeneration += 1;
             emitStopRecording();
-            
-            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
-            if (processor) processor.disconnect();
-            if (audioContext) audioContext.close();
+
+            if (processor) {
+                try {
+                    if (processor.port) {
+                        processor.port.onmessage = null;
+                    }
+                    processor.onaudioprocess = null;
+                    processor.disconnect();
+                } catch (err) {
+                    console.warn('断开 processor 失败:', err);
+                }
+                processor = null;
+            }
+
+            if (sourceNode) {
+                try {
+                    sourceNode.disconnect();
+                } catch (err) {
+                    console.warn('断开 sourceNode 失败:', err);
+                }
+                sourceNode = null;
+            }
+
+            if (mediaStream) {
+                try {
+                    mediaStream.getTracks().forEach(t => t.stop());
+                } catch (err) {
+                    console.warn('停止 mediaStream 失败:', err);
+                }
+                mediaStream = null;
+            }
+
+            if (audioContext) {
+                const currentContext = audioContext;
+                audioContext = null;
+                try {
+                    await currentContext.close();
+                } catch (err) {
+                    console.warn('关闭 audioContext 失败:', err);
+                }
+            }
 
             saveAudioToLocal();
             saveCache({ immediate: true });

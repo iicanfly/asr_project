@@ -871,3 +871,21 @@
 - 验证：
   - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
   - `python -m py_compile .\main.py .\services\asr_service.py .\tools\analyze_realtime_audio.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py`
+
+## 2026-05-10 / 本轮：修复停止录音后仍继续写入 PCM 的风险链路
+- 用户反馈：
+  - 点击停止录音后，`stream_recording_20260510_204811.pcm` 仍继续增长
+  - 整段朗读前端没有输出，但离线分析显示这条样本本身已被停止后的持续录音污染
+- 结构性结论：
+  - 这不是单纯的静音门槛问题，还涉及录音停止链路未收干净
+- 改动：
+  - 前端新增 `start_recording` 握手
+  - 前端停止时显式失效旧 `recordingGeneration`
+  - 前端停止时更彻底地断开 `processor`、`sourceNode`、`mediaStream`、`audioContext`
+  - 后端忽略 `stop_requested` 之后继续到达的 `audio_stream`
+  - 后端新增 stop 后短冷却窗口，忽略晚到音频包，避免 stop 后又偷偷创建/污染 session
+- 直接证据：
+  - `stream_recording_20260510_204811.pcm` 离线分析显示总时长约 75.87 秒，明显超过用户主观操作预期，属于已污染样本
+- 验证：
+  - `python -m py_compile .\main.py`
+  - `node --check static\js\app.js`
