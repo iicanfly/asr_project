@@ -238,12 +238,13 @@ class AudioFeatureTests(unittest.TestCase):
     def test_simplified_chunk_processing_drops_non_speech_after_tail_silence(self):
         policy = RealtimeChunkPolicy(
             min_audio_seconds=0.6,
+            min_tail_chunk_seconds=1.4,
             chunk_seconds=2.5,
             max_audio_seconds=12.0,
             min_speech_frames=60,
             tail_silence_bytes=4096,
         )
-        non_speech_tail_audio = pcm_frames(([180] * 20) + ([0] * 64))
+        non_speech_tail_audio = pcm_frames(([180] * 24) + ([0] * 64))
         decision = decide_chunk_processing_simple(non_speech_tail_audio, policy)
         self.assertFalse(decision.should_process)
         self.assertTrue(decision.drop_buffer)
@@ -252,12 +253,28 @@ class AudioFeatureTests(unittest.TestCase):
             "simplified_drop_non_speech_after_tail_silence_detected",
         )
 
+    def test_simplified_tail_silence_waits_until_min_tail_chunk_duration(self):
+        policy = RealtimeChunkPolicy(
+            min_audio_seconds=0.6,
+            min_tail_chunk_seconds=1.4,
+            chunk_seconds=2.5,
+            max_audio_seconds=12.0,
+            min_speech_frames=60,
+            tail_silence_bytes=4096,
+        )
+        short_tail_audio = pcm_frames(([900] * 22) + ([0] * 18))
+        decision = decide_chunk_processing_simple(short_tail_audio, policy)
+        self.assertFalse(decision.should_process)
+        self.assertFalse(decision.drop_buffer)
+        self.assertEqual(decision.reason, "tail_silence_below_min_tail_chunk_duration")
+
     def test_build_realtime_chunk_policy_keeps_main_defaults_in_one_place(self):
         simplified_policy = build_realtime_chunk_policy(simplified=True)
         legacy_policy = build_realtime_chunk_policy(simplified=False)
         self.assertEqual(simplified_policy.chunk_seconds, 2.5)
         self.assertEqual(simplified_policy.min_audio_seconds, 0.6)
         self.assertEqual(simplified_policy.max_audio_seconds, 12.0)
+        self.assertEqual(simplified_policy.min_tail_chunk_seconds, 1.4)
         self.assertEqual(legacy_policy.chunk_seconds, 10.0)
         self.assertEqual(legacy_policy.min_audio_seconds, 1.0)
         self.assertEqual(legacy_policy.max_audio_seconds, 30.0)

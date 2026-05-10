@@ -592,6 +592,63 @@ def finalize_active_segment_on_stop(session, sid):
         session['active_segment'] = None
 
 
+def drain_ready_realtime_buffer(session, sid, *, max_rounds=6):
+    rounds = 0
+    while rounds < max_rounds:
+        if session.get('processing'):
+            return
+
+        buffered_audio = bytes(session['buffer'])
+        if not buffered_audio:
+            break
+
+        chunk_decision = DECIDE_REALTIME_CHUNK(buffered_audio, REALTIME_CHUNK_POLICY)
+        if not chunk_decision.should_process:
+            if chunk_decision.drop_buffer:
+                features = chunk_decision.audio_features
+                logger.info(
+                    "Dropping realtime buffer sid=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f density=%.2f active_s=%.2fs voiced_s=%.2fs active_run_s=%.2fs voiced_run_s=%.2fs silence=%.2f",
+                    sid,
+                    chunk_decision.reason,
+                    chunk_decision.speech_gate_reason or "-",
+                    chunk_decision.tail_gate_reason or "-",
+                    chunk_decision.audio_duration_seconds,
+                    features.rms if features else 0.0,
+                    features.peak if features else 0,
+                    features.active_ratio if features else 0.0,
+                    features.voiced_ratio if features else 0.0,
+                    features.voiced_density if features else 0.0,
+                    features.active_seconds if features else 0.0,
+                    features.voiced_seconds if features else 0.0,
+                    features.max_active_run_seconds if features else 0.0,
+                    features.max_voiced_run_seconds if features else 0.0,
+                    features.silence_ratio if features else 0.0,
+                )
+                session['buffer'].clear()
+            else:
+                retained_audio = retain_realtime_buffer(buffered_audio, chunk_decision, REALTIME_CHUNK_POLICY)
+                if retained_audio != buffered_audio:
+                    logger.info(
+                        "Retaining realtime buffer sid=%s reason=%s retained_duration=%.2fs original_duration=%.2fs",
+                        sid,
+                        chunk_decision.reason,
+                        len(retained_audio) / float(REALTIME_CHUNK_POLICY.sample_rate * REALTIME_CHUNK_POLICY.bytes_per_sample),
+                        len(buffered_audio) / float(REALTIME_CHUNK_POLICY.sample_rate * REALTIME_CHUNK_POLICY.bytes_per_sample),
+                    )
+                    session['buffer'].clear()
+                    session['buffer'].extend(retained_audio)
+            break
+
+        session['buffer'].clear()
+        process_realtime_audio_chunk(session, sid, buffered_audio, chunk_decision)
+        rounds += 1
+
+    if session.get('stop_requested') and not session.get('processing'):
+        flush_pending_realtime_buffer(session, sid, force_finalize_segment=True)
+        finalize_active_segment_on_stop(session, sid)
+        cleanup_realtime_session(sid)
+
+
 @socketio.on("connect")
 def on_connect():
     logger.info(f"Socket.IO 客户端已连接: {request.sid}")
@@ -643,53 +700,7 @@ def on_audio_stream(data):
     if session['processing']:
         return
 
-    current_time = time.time()
-    chunk_decision = DECIDE_REALTIME_CHUNK(bytes(session['buffer']), REALTIME_CHUNK_POLICY)
-
-    if not chunk_decision.should_process:
-        if chunk_decision.drop_buffer:
-            features = chunk_decision.audio_features
-            logger.info(
-                "Dropping realtime buffer sid=%s reason=%s speech_gate=%s tail_gate=%s duration=%.2fs rms=%.4f peak=%s active=%.2f voiced=%.2f density=%.2f active_s=%.2fs voiced_s=%.2fs active_run_s=%.2fs voiced_run_s=%.2fs silence=%.2f",
-                sid,
-                chunk_decision.reason,
-                chunk_decision.speech_gate_reason or "-",
-                chunk_decision.tail_gate_reason or "-",
-                chunk_decision.audio_duration_seconds,
-                features.rms if features else 0.0,
-                features.peak if features else 0,
-                features.active_ratio if features else 0.0,
-                features.voiced_ratio if features else 0.0,
-                features.voiced_density if features else 0.0,
-                features.active_seconds if features else 0.0,
-                features.voiced_seconds if features else 0.0,
-                features.max_active_run_seconds if features else 0.0,
-                features.max_voiced_run_seconds if features else 0.0,
-                features.silence_ratio if features else 0.0,
-            )
-            session['buffer'].clear()
-        else:
-            retained_audio = retain_realtime_buffer(bytes(session['buffer']), chunk_decision, REALTIME_CHUNK_POLICY)
-            if retained_audio != bytes(session['buffer']):
-                logger.info(
-                    "Retaining realtime buffer sid=%s reason=%s retained_duration=%.2fs original_duration=%.2fs",
-                    sid,
-                    chunk_decision.reason,
-                    len(retained_audio) / float(REALTIME_CHUNK_POLICY.sample_rate * REALTIME_CHUNK_POLICY.bytes_per_sample),
-                    len(session['buffer']) / float(REALTIME_CHUNK_POLICY.sample_rate * REALTIME_CHUNK_POLICY.bytes_per_sample),
-                )
-                session['buffer'].clear()
-                session['buffer'].extend(retained_audio)
-        return
-
-    audio_data = bytes(session['buffer'])
-    session['buffer'].clear()
-    process_realtime_audio_chunk(session, sid, audio_data, chunk_decision)
-
-    if session.get('stop_requested'):
-        flush_pending_realtime_buffer(session, sid, force_finalize_segment=True)
-        finalize_active_segment_on_stop(session, sid)
-        cleanup_realtime_session(sid)
+    drain_ready_realtime_buffer(session, sid)
 
 
 @socketio.on("stop_recording")

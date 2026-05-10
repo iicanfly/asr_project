@@ -244,3 +244,10 @@
   - 前端新增 `start_recording` 握手
   - 前端停止时显式失效旧 recording generation，并断开 `processor/sourceNode/mediaStream/audioContext`
   - 后端对 `stop_requested` 后的音频包和 stop 后短时间内的晚到音频包直接忽略
+
+## 2026-05-10 / 连续朗读场景的低延迟回归
+- 目标：连续读长句时，不要因为微小停连把一句话切成太多短 chunk
+- 本轮新增验证重点：
+  - simplified 管线下，`tail_silence_detected` 只有在达到最短成段时长后才允许切段
+  - `211035.pcm` 这类连续朗读样本中，过短尾静音切段数量应下降
+  - 实时处理完成后，应立刻继续 drain 已积压的 buffer，减少“后半段很久才显示”的现象

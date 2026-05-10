@@ -52,6 +52,7 @@ class RealtimeChunkPolicy:
     min_audio_seconds: float = 1.0
     max_audio_seconds: float = 30.0
     chunk_seconds: float = 10.0
+    min_tail_chunk_seconds: float = 1.4
     stop_flush_min_seconds: float = 0.35
     min_speech_frames: int = 100
     tail_silence_bytes: int = 4000
@@ -146,6 +147,7 @@ def build_realtime_chunk_policy(*, simplified: bool) -> RealtimeChunkPolicy:
             min_audio_seconds=0.6,
             max_audio_seconds=12.0,
             chunk_seconds=2.5,
+            min_tail_chunk_seconds=1.4,
             stop_flush_min_seconds=0.25,
             min_speech_frames=60,
             uncertain_retain_seconds=0.6,
@@ -162,6 +164,7 @@ REALTIME_POLICY_PARSERS = {
     "min_audio_seconds": float,
     "max_audio_seconds": float,
     "chunk_seconds": float,
+    "min_tail_chunk_seconds": float,
     "stop_flush_min_seconds": float,
     "min_speech_frames": int,
     "tail_silence_bytes": int,
@@ -649,6 +652,13 @@ def decide_chunk_processing_simple(audio_data: bytes, policy: RealtimeChunkPolic
         if not trailing_silence_detected:
             return _build_trigger_wait_decision(
                 reason="waiting_for_more_audio",
+                duration_seconds=duration_seconds,
+                features=features,
+                speech_gate_reason=speech_gate_reason,
+            )
+        if duration_seconds < policy.min_tail_chunk_seconds:
+            return _build_trigger_wait_decision(
+                reason="tail_silence_below_min_tail_chunk_duration",
                 duration_seconds=duration_seconds,
                 features=features,
                 speech_gate_reason=speech_gate_reason,

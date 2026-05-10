@@ -889,3 +889,21 @@
 - 验证：
   - `python -m py_compile .\main.py`
   - `node --check static\js\app.js`
+
+## 2026-05-10 / 本轮：降低连续朗读场景的切段碎片与展示延迟
+- 用户反馈：
+  - `stream_recording_20260510_211035.pcm` 中，连续朗读时前端虽然有输出，但切得偏碎
+  - 后半段“如果某类信息在……”出现得很晚，且展示不完整
+- 离线结论：
+  - 真实 ASR 抽样显示，后半段内容其实已经被识别到
+  - 更像是“微小停连导致 chunk 过碎 + 运行时 backlog 排空不够积极”
+- 改动：
+  - `services/asr_service.py` 为 simplified 管线新增 `min_tail_chunk_seconds=1.4`
+  - 过短尾静音不再立刻 `tail_silence_detected` 切段，而是先继续等待
+  - `main.py` 新增 `drain_ready_realtime_buffer()`，每次处理完当前 chunk 后继续主动消化已积压的 buffer
+- 离线结果：
+  - `211035.pcm` 在 simplified 口径下的 `process_count` 从 18 降到 16
+  - 首段切分从约 1 秒多提前切，改为更偏向先攒到 2.5 秒左右再发
+- 验证：
+  - `python -m unittest tests.test_asr_service tests.test_analyze_realtime_audio`
+  - `python -m py_compile .\main.py .\services\asr_service.py .\tools\analyze_realtime_audio.py .\tests\test_asr_service.py .\tests\test_analyze_realtime_audio.py`
