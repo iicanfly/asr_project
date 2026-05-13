@@ -169,7 +169,7 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
             if event_name == "asr_result":
                 emitted_payloads.append(payload)
 
-        with patch.object(main, "transcribe_realtime_chunk", return_value="可以对已有信息进行合理扩充。"), patch.object(main.socketio, "emit", side_effect=fake_emit):
+        with patch.object(main, "IDLE_SEGMENT_SPLIT_SECONDS", 0.0), patch.object(main, "transcribe_realtime_chunk", return_value="可以对已有信息进行合理扩充。"), patch.object(main.socketio, "emit", side_effect=fake_emit):
             emitted = main.process_idle_realtime_session(session, "sid-1", now=111.0)
 
         self.assertTrue(emitted)
@@ -180,6 +180,42 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
         self.assertEqual(emitted_payloads[0]["medium_text"], "")
         self.assertEqual(emitted_payloads[0]["partial_text"], "")
         self.assertEqual(active_segment["stage_duration_seconds"], 0.0)
+        self.assertEqual(session["last_idle_rewrite_audio_time"], 100.0)
+
+    def test_idle_segment_boundary_flushes_before_finalizing_current_segment(self):
+        session = self._build_session()
+        active_segment = main.get_or_create_active_segment(session)
+        active_segment["stage_display_text"] = "第一段内容"
+        active_segment["stage_duration_seconds"] = 4.0
+        active_segment["chunk_count"] = 2
+        active_segment["duration_seconds"] = 4.0
+        active_segment["last_result_id"] = "demo_result_prev"
+        active_segment["latest_display_text"] = "第一段内容"
+        active_segment["latest_result_type"] = "segment_partial"
+        session["last_speech_time"] = 100.0
+        session["last_audio_time"] = 100.2
+        call_order = []
+        emitted_payloads = []
+
+        def fake_flush(*args, **kwargs):
+            call_order.append("flush")
+            return False
+
+        def fake_emit(event_name, payload, to=None):
+            if event_name == "asr_result":
+                call_order.append("emit")
+                emitted_payloads.append(payload)
+
+        with patch.object(main, "flush_pending_realtime_buffer", side_effect=fake_flush), patch.object(main, "transcribe_realtime_chunk", return_value=""), patch.object(main.socketio, "emit", side_effect=fake_emit):
+            emitted = main.process_idle_realtime_session(session, "sid-1", now=103.2)
+
+        self.assertTrue(emitted)
+        self.assertEqual(call_order, ["flush", "emit"])
+        self.assertEqual(len(emitted_payloads), 1)
+        self.assertEqual(emitted_payloads[0]["result_type"], "high_rewrite")
+        self.assertEqual(emitted_payloads[0]["processing_reason"], "idle_segment_boundary_timeout")
+        self.assertEqual(emitted_payloads[0]["text"], "第一段内容")
+        self.assertIsNone(session["active_segment"])
         self.assertEqual(session["last_idle_rewrite_audio_time"], 100.0)
 
 

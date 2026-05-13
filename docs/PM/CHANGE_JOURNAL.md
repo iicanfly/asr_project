@@ -28,6 +28,27 @@
 
 ### 2026-05-13 / Commit 待提交
 - 主题：
+  - 改为“约 3 秒无明显有效活动自动分段”，并补齐 flush-before-finalize 保护。
+- 修改内容：
+  - 在 `main.py` 中新增 `IDLE_SEGMENT_SPLIT_SECONDS`，默认值为 `3.0`。
+  - `process_idle_realtime_session()` 改为优先处理 idle 分段：先 `flush_pending_realtime_buffer()`，再用 `idle_segment_boundary_timeout` 收尾当前段。
+  - 抽出通用 `finalize_active_segment()`，让 stop 收尾与 idle 分段共用同一套 finalize 路径。
+  - 在 `tests/test_realtime_tiered_rewrite.py` 中新增“flush 先于 idle 分段 finalize”回归，并保留禁用 idle 分段时的 10 秒 idle high rewrite 回归。
+  - 同步更新 README 与 PM 文档，明确当前默认行为已不再是“整次录音只保留一段”。
+- 目的：
+  - 让分段基于“没有明显有效活动”而不是简单绝对静音，同时降低尾音串到下一段的风险。
+- 验证方式：
+  - `python -m py_compile main.py services/asr_service.py config.py tools/codex_guard.py tests/test_realtime_tiered_rewrite.py`
+  - `python -m unittest tests.test_realtime_tiered_rewrite`
+- 当前结果：
+  - 当前默认行为已变为：约 3 秒无明显有效活动时，自动收尾当前段；后续再次说话时新开下一段。
+- 用户反馈：
+  - 用户明确要求：希望加入分段功能，并优先按“没有明显有效活动”而非简单静音做切段。
+- 后续动作：
+  - 继续用真实录音观察：3 秒边界是否过碎、是否还会出现串段或尾句丢失。
+
+### 2026-05-13 / Commit 待提交
+- 主题：
   - 下调 partial 与中级回写节奏，并增强中级回写颜色区分度。
 - 修改内容：
   - 在 `.env` 中新增 `ONLINE_REALTIME_MIN_AUDIO_SECONDS=1.5`，把当前外网 partial 最小时长门槛调到约 1.5 秒。

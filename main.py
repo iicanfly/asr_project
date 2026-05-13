@@ -296,6 +296,7 @@ DECIDE_REALTIME_CHUNK = decide_chunk_processing_simple if ENABLE_SIMPLIFIED_REAL
 DECIDE_STOP_FLUSH = decide_stop_flush_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_stop_flush
 MEDIUM_REWRITE_SECONDS = env_float("MEDIUM_REWRITE_SECONDS", 6.0)
 HIGH_REWRITE_SECONDS = env_float("HIGH_REWRITE_SECONDS", 30.0)
+IDLE_SEGMENT_SPLIT_SECONDS = env_float("IDLE_SEGMENT_SPLIT_SECONDS", 3.0)
 IDLE_HIGH_REWRITE_SECONDS = env_float("IDLE_HIGH_REWRITE_SECONDS", 10.0)
 
 
@@ -505,6 +506,16 @@ def build_segment_display_text(active_segment, stage_text: str | None = None) ->
     stable_text = active_segment.get("stable_text", "")
     suffix_text = active_segment.get("stage_display_text", "") if stage_text is None else stage_text
     return merge_transcript_fragments(stable_text, suffix_text)
+
+
+def has_displayable_segment_content(active_segment) -> bool:
+    if not active_segment:
+        return False
+    return bool(
+        active_segment.get("stage_display_text")
+        or active_segment.get("stable_text")
+        or active_segment.get("latest_display_text")
+    )
 
 
 def build_display_layers(active_segment, result_type: str, *, stage_text: str = "", stable_override: str | None = None) -> tuple[str, str, str]:
@@ -925,32 +936,48 @@ def flush_pending_realtime_buffer(session, sid, *, force_finalize_segment=False)
     return True
 
 
-def finalize_active_segment_on_stop(session, sid):
+def finalize_active_segment(
+    session,
+    sid,
+    *,
+    reason: str,
+):
     active_segment = session.get('active_segment')
     if not active_segment:
-        return
+        return False
 
-    stop_chunk_decision = ChunkDecision(
+    finalize_chunk_decision = ChunkDecision(
         should_process=False,
-        reason="stop_recording_finalize_segment",
+        reason=reason,
         audio_duration_seconds=active_segment['duration_seconds'],
         trailing_silence_detected=False,
     )
-    emit_tiered_rewrite_if_needed(
+    emitted = emit_tiered_rewrite_if_needed(
         session,
         sid,
         active_segment,
-        stop_chunk_decision,
+        finalize_chunk_decision,
         finalize_segment=True,
     )
     logger.info(
-        "Finalizing realtime segment sid=%s segment=%s reason=stop_recording_finalize_segment chunks=%s duration=%.2fs",
+        "Finalizing realtime segment sid=%s segment=%s reason=%s chunks=%s duration=%.2fs emitted=%s",
         sid,
         active_segment['segment_id'],
+        reason,
         active_segment['chunk_count'],
         active_segment['duration_seconds'],
+        emitted,
     )
     session['active_segment'] = None
+    return emitted
+
+
+def finalize_active_segment_on_stop(session, sid):
+    return finalize_active_segment(
+        session,
+        sid,
+        reason="stop_recording_finalize_segment",
+    )
 
 
 def drain_ready_realtime_buffer(session, sid, *, max_rounds=6):
@@ -1036,11 +1063,39 @@ def process_idle_realtime_session(session, sid, *, now: float | None = None) -> 
         return False
     if last_speech_time <= 0 or last_speech_time <= last_idle_rewrite_audio_time:
         return False
-    if (current_time - last_speech_time) < IDLE_HIGH_REWRITE_SECONDS:
+    speech_idle_seconds = current_time - last_speech_time
+    min_idle_gate_seconds = IDLE_HIGH_REWRITE_SECONDS
+    if IDLE_SEGMENT_SPLIT_SECONDS > 0:
+        min_idle_gate_seconds = min(IDLE_SEGMENT_SPLIT_SECONDS, IDLE_HIGH_REWRITE_SECONDS)
+    if speech_idle_seconds < min_idle_gate_seconds:
+        return False
+
+    if IDLE_SEGMENT_SPLIT_SECONDS > 0 and speech_idle_seconds >= IDLE_SEGMENT_SPLIT_SECONDS:
+        flush_pending_realtime_buffer(session, sid, force_finalize_segment=False)
+        active_segment = session.get('active_segment')
+        if not has_displayable_segment_content(active_segment):
+            session['last_idle_rewrite_audio_time'] = last_speech_time
+            return False
+
+        emitted = finalize_active_segment(
+            session,
+            sid,
+            reason="idle_segment_boundary_timeout",
+        )
+        session['last_idle_rewrite_audio_time'] = last_speech_time
+        logger.info(
+            "Idle segment boundary triggered sid=%s speech_idle_seconds=%.2f raw_audio_idle_seconds=%.2f emitted=%s",
+            sid,
+            speech_idle_seconds,
+            current_time - last_audio_time,
+            emitted,
+        )
+        return emitted
+
+    if speech_idle_seconds < IDLE_HIGH_REWRITE_SECONDS:
         return False
 
     flush_pending_realtime_buffer(session, sid, force_finalize_segment=False)
-
     active_segment = session.get('active_segment')
     if not active_segment or not active_segment.get('stage_display_text'):
         session['last_idle_rewrite_audio_time'] = last_speech_time

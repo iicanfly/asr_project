@@ -59,8 +59,29 @@ flowchart TD
     O --> P["发 segment_rewrite 覆盖前文"]
     N -->|should_finalize_segment=True| Q["结束当前 segment"]
 
+    U["连续约 3 秒无明显有效活动"] --> V["flush_pending_realtime_buffer"]
+    V --> W["finalize_active_segment(reason=idle_segment_boundary_timeout)"]
+    W --> X["session.active_segment = None"]
+    X --> Y["后续再次出现有效说话时创建新的 segment_id"]
+
     R["用户 stop_recording"] --> S["flush_pending_realtime_buffer"]
     S --> T["finalize_active_segment_on_stop"]
+```
+
+## 3.1 当前串段风险与保护路径
+
+```mermaid
+flowchart TD
+    A["用户停止说话"] --> B{"buffer 里还有尾部音频?"}
+    B -->|是| C["如果直接 finalize 当前段"]
+    C --> D["尾部音频来不及并入当前段"]
+    D --> E["下一段首包可能带上上一段尾巴"]
+
+    B -->|是| F["先 flush_pending_realtime_buffer"]
+    F --> G["尾部音频先按 partial / medium / high 规则并入当前段"]
+    G --> H["再 finalize 当前段"]
+    H --> I["active_segment 置空"]
+    I --> J["后续新说话创建新 segment_id"]
 ```
 
 ---

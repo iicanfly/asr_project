@@ -224,3 +224,6 @@
 - 中级回写节奏：
   - `MEDIUM_REWRITE_SECONDS=6.0`
   - 含义：当前三级回写中的 `medium_rewrite` 以约 6 秒为一档滚动触发，而不是旧的 10 秒档。
+- 空闲自动分段：
+  - `IDLE_SEGMENT_SPLIT_SECONDS=3.0`
+  - 含义：当前会话若连续约 3 秒没有明显有效活动，会先 flush 缓冲区，再对当前段做一次收尾并等待下一段。
