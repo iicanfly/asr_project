@@ -355,34 +355,48 @@ class SessionManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._sessions = {}
+            cls._instance._closing_sessions = {}
             cls._instance._recently_stopped = {}
+            cls._instance._session_counter = 0
             cls._instance._lock = threading.Lock()
         return cls._instance
+
+    def _build_session(self, sid):
+        self._session_counter += 1
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        session_tag = f"{timestamp}_{self._session_counter}"
+        filename = f"stream_recording_{session_tag}.pcm"
+        file_path = os.path.join(TEMP_DIR, filename)
+        return {
+            'sid': sid,
+            'buffer': bytearray(),
+            'last_process_time': time.time(),
+            'last_audio_time': time.time(),
+            'last_speech_time': 0.0,
+            'last_idle_rewrite_audio_time': 0.0,
+            'processing': False,
+            'stop_requested': False,
+            'drain_lock': threading.Lock(),
+            'file_path': file_path,
+            'file_handle': open(file_path, "wb"),
+            'session_tag': session_tag,
+            'chunk_seq': 0,
+            'result_seq': 0,
+            'segment_seq': 0,
+            'active_segment': None,
+        }
 
     def get_or_create(self, sid):
         with self._lock:
             if sid not in self._sessions:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"stream_recording_{timestamp}.pcm"
-                file_path = os.path.join(TEMP_DIR, filename)
-                self._sessions[sid] = {
-                    'buffer': bytearray(),
-                    'last_process_time': time.time(),
-                    'last_audio_time': time.time(),
-                    'last_speech_time': 0.0,
-                    'last_idle_rewrite_audio_time': 0.0,
-                    'processing': False,
-                    'stop_requested': False,
-                    'drain_lock': threading.Lock(),
-                    'file_path': file_path,
-                    'file_handle': open(file_path, "wb"),
-                    'session_tag': timestamp,
-                    'chunk_seq': 0,
-                    'result_seq': 0,
-                    'segment_seq': 0,
-                    'active_segment': None,
-                }
+                self._sessions[sid] = self._build_session(sid)
             return self._sessions[sid]
+
+    def create_new_session(self, sid):
+        with self._lock:
+            session = self._build_session(sid)
+            self._sessions[sid] = session
+            return session
 
     def get(self, sid):
         with self._lock:
@@ -391,6 +405,18 @@ class SessionManager:
     def items_snapshot(self):
         with self._lock:
             return list(self._sessions.items())
+
+    def detach(self, sid, session=None):
+        with self._lock:
+            current_session = self._sessions.get(sid)
+            if current_session is None:
+                return None
+            if session is not None and current_session is not session:
+                return None
+            detached_session = self._sessions.pop(sid, None)
+            if detached_session is not None:
+                self._closing_sessions.setdefault(sid, []).append(detached_session)
+            return detached_session
 
     def mark_recently_stopped(self, sid, cooldown_seconds=3.0):
         with self._lock:
@@ -410,15 +436,40 @@ class SessionManager:
                 return False
             return True
 
-    def remove(self, sid):
+    def remove(self, sid=None, session=None, *, include_closing=False):
         with self._lock:
-            session = self._sessions.pop(sid, None)
-            if session:
-                fh = session.get('file_handle')
+            removed_sessions = []
+
+            if session is not None:
+                current_sid = session.get('sid')
+                current_session = self._sessions.get(current_sid)
+                if current_session is session:
+                    removed_sessions.append(self._sessions.pop(current_sid))
+                else:
+                    closing_sessions = self._closing_sessions.get(current_sid, [])
+                    remaining_sessions = [candidate for candidate in closing_sessions if candidate is not session]
+                    if len(remaining_sessions) != len(closing_sessions):
+                        removed_sessions.append(session)
+                        if remaining_sessions:
+                            self._closing_sessions[current_sid] = remaining_sessions
+                        else:
+                            self._closing_sessions.pop(current_sid, None)
+            elif sid is not None:
+                current_session = self._sessions.pop(sid, None)
+                if current_session is not None:
+                    removed_sessions.append(current_session)
+                if include_closing:
+                    removed_sessions.extend(self._closing_sessions.pop(sid, []))
+
+            removed_paths = []
+            for removed_session in removed_sessions:
+                fh = removed_session.get('file_handle')
                 if fh:
                     fh.close()
-                return session.get('file_path', '')
-            return ''
+                file_path = removed_session.get('file_path', '')
+                if file_path:
+                    removed_paths.append(file_path)
+            return removed_paths
 
 
 session_mgr = SessionManager()
@@ -527,9 +578,9 @@ def build_realtime_result_payload(
     }
 
 
-def cleanup_realtime_session(sid):
-    file_path = session_mgr.remove(sid)
-    if file_path:
+def cleanup_realtime_session(sid=None, *, session=None, include_closing=False):
+    file_paths = session_mgr.remove(sid=sid, session=session, include_closing=include_closing)
+    for file_path in file_paths:
         logger.info(f"录音结束，音频已保存至: {file_path}")
 
 
@@ -1111,7 +1162,7 @@ def drain_ready_realtime_buffer(session, sid, *, max_rounds=6):
     if session.get('stop_requested') and not session.get('processing'):
         flush_pending_realtime_buffer(session, sid, force_finalize_segment=True)
         finalize_active_segment_on_stop(session, sid)
-        cleanup_realtime_session(sid)
+        cleanup_realtime_session(session=session)
 
 
 def try_drain_realtime_buffer(session, sid, *, max_rounds=6):
@@ -1250,7 +1301,7 @@ def on_disconnect():
     sid = request.sid
     logger.info(f"Socket.IO 客户端已断开: {sid}")
     session_mgr.mark_recently_stopped(sid)
-    cleanup_realtime_session(sid)
+    cleanup_realtime_session(sid=sid, include_closing=True)
 
 
 @socketio.on("start_recording")
@@ -1258,9 +1309,23 @@ def on_start_recording(data=None):
     sid = request.sid
     session_mgr.clear_recently_stopped(sid)
     stale_session = session_mgr.get(sid)
-    if stale_session and not stale_session.get('processing', False):
+    if stale_session and stale_session.get('stop_requested'):
+        if stale_session.get('processing', False):
+            detached_session = session_mgr.detach(sid, stale_session)
+            if detached_session is not None:
+                replacement_session = session_mgr.create_new_session(sid)
+                logger.info(
+                    "收到 start_recording，分离停止中的旧 session sid=%s old_session=%s new_session=%s",
+                    sid,
+                    detached_session.get('session_tag'),
+                    replacement_session.get('session_tag'),
+                )
+        else:
+            logger.info("收到 start_recording，清理残留 session sid=%s", sid)
+            cleanup_realtime_session(session=stale_session)
+    elif stale_session and not stale_session.get('processing', False):
         logger.info("收到 start_recording，清理残留 session sid=%s", sid)
-        cleanup_realtime_session(sid)
+        cleanup_realtime_session(session=stale_session)
     logger.info("收到 start_recording sid=%s data=%s", sid, data or {})
 
 
@@ -1319,7 +1384,7 @@ def on_stop_recording(data=None):
         flush_pending_realtime_buffer(session, sid, force_finalize_segment=True)
         finalize_active_segment_on_stop(session, sid)
 
-    cleanup_realtime_session(sid)
+    cleanup_realtime_session(session=session)
 
 
 @app.route("/api/v1/llm/summarize", methods=["POST"])

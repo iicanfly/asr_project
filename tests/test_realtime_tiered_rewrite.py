@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import main
@@ -312,6 +313,64 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
 
         with patch.object(main, "extract_audio_features", return_value=features), patch.object(main, "describe_usable_speech", return_value="sustained_soft_speech"), patch.object(main, "is_weak_background_audio", return_value=False):
             self.assertFalse(main.contains_meaningful_realtime_activity(b"\x01\x02" * 3200))
+
+class RealtimeRestartSessionTests(unittest.TestCase):
+    def setUp(self):
+        self._reset_session_manager_state()
+
+    def tearDown(self):
+        self._reset_session_manager_state()
+
+    def _reset_session_manager_state(self):
+        for sid in list(getattr(main.session_mgr, "_sessions", {}).keys()):
+            main.cleanup_realtime_session(sid=sid, include_closing=True)
+        for sid in list(getattr(main.session_mgr, "_closing_sessions", {}).keys()):
+            main.cleanup_realtime_session(sid=sid, include_closing=True)
+        main.session_mgr._recently_stopped.clear()
+
+    def test_start_after_stop_requested_processing_creates_new_session_and_accepts_new_audio(self):
+        sid = "sid-restart"
+        old_session = main.session_mgr.get_or_create(sid)
+        old_session["stop_requested"] = True
+        old_session["processing"] = True
+        old_session["buffer"].extend(b"old-buffer")
+
+        with patch.object(main, "request", SimpleNamespace(sid=sid)):
+            main.on_start_recording({"reason": "manual_start"})
+
+        new_session = main.session_mgr.get(sid)
+        self.assertIsNotNone(new_session)
+        self.assertIsNot(new_session, old_session)
+        self.assertNotEqual(new_session["session_tag"], old_session["session_tag"])
+        self.assertIn(old_session, main.session_mgr._closing_sessions.get(sid, []))
+        self.assertFalse(new_session["stop_requested"])
+
+        with patch.object(main, "request", SimpleNamespace(sid=sid)), patch.object(main, "contains_meaningful_realtime_activity", return_value=False), patch.object(main, "try_drain_realtime_buffer", return_value=None):
+            main.on_audio_stream(b"\x01\x02" * 128)
+
+        self.assertGreater(len(new_session["buffer"]), 0)
+        self.assertEqual(old_session["buffer"], bytearray(b"old-buffer"))
+
+    def test_detached_stop_cleanup_does_not_remove_new_current_session(self):
+        sid = "sid-cleanup"
+        old_session = main.session_mgr.get_or_create(sid)
+        old_session["stop_requested"] = True
+        old_session["processing"] = True
+
+        with patch.object(main, "request", SimpleNamespace(sid=sid)):
+            main.on_start_recording({"reason": "manual_start"})
+
+        new_session = main.session_mgr.get(sid)
+        self.assertIsNot(new_session, old_session)
+
+        old_session["processing"] = False
+        with patch.object(main, "flush_pending_realtime_buffer", return_value=False) as mock_flush, patch.object(main, "finalize_active_segment_on_stop", return_value=False) as mock_finalize:
+            main.drain_ready_realtime_buffer(old_session, sid, max_rounds=0)
+
+        mock_flush.assert_called_once_with(old_session, sid, force_finalize_segment=True)
+        mock_finalize.assert_called_once_with(old_session, sid)
+        self.assertIs(main.session_mgr.get(sid), new_session)
+        self.assertNotIn(old_session, main.session_mgr._closing_sessions.get(sid, []))
 
 
 if __name__ == "__main__":
