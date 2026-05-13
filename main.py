@@ -25,7 +25,6 @@ from services.asr_service import (
     collapse_transcript_text,
     is_effective_text_update,
     load_realtime_chunk_policy_overrides,
-    looks_like_sentence_boundary,
     decide_chunk_processing,
     decide_chunk_processing_simple,
     decide_segment_rewrite,
@@ -619,11 +618,21 @@ def has_displayable_segment_content(active_segment) -> bool:
     )
 
 
+SEGMENT_SPLIT_END_PUNCTUATION = "。！？!?；;"
+
+
+def ends_with_explicit_segment_boundary(text: str) -> bool:
+    display_text = re.sub(r"\s+", "", str(text or ""))
+    if not display_text:
+        return False
+    return display_text[-1] in SEGMENT_SPLIT_END_PUNCTUATION
+
+
 def should_split_segment_after_high_rewrite(committed_text: str) -> bool:
     dense_text = collapse_transcript_text(committed_text)
     if len(dense_text) < HIGH_REWRITE_SEGMENT_SPLIT_MIN_CHARS:
         return False
-    return looks_like_sentence_boundary(committed_text)
+    return ends_with_explicit_segment_boundary(committed_text)
 
 
 def build_display_layers(active_segment, result_type: str, *, stage_text: str = "", stable_override: str | None = None) -> tuple[str, str, str]:

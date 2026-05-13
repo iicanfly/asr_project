@@ -297,6 +297,30 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
         self.assertIs(session["active_segment"], active_segment)
         self.assertGreaterEqual(len(active_segment["stable_text"]), len("当前段"))
 
+    def test_high_rewrite_does_not_split_without_explicit_sentence_end_punctuation(self):
+        session = self._build_session()
+        active_segment = main.get_or_create_active_segment(session)
+        active_segment["audio_buffer"].extend(b"\x01\x02" * 16000)
+        active_segment["chunk_count"] = 12
+        active_segment["duration_seconds"] = 30.0
+        active_segment["stage_chunk_count"] = 12
+        active_segment["stage_duration_seconds"] = 30.0
+        active_segment["stage_display_text"] = "当前段"
+        active_segment["last_result_id"] = "demo_result_prev"
+        no_terminal_punctuation = "这是一个已经很长但末尾没有明确句号的完整转写片段" * 6
+
+        with patch.object(main, "transcribe_realtime_chunk", return_value=no_terminal_punctuation), patch.object(main.socketio, "emit", return_value=None), patch.object(main, "HIGH_REWRITE_SEGMENT_SPLIT_MIN_CHARS", 100):
+            emitted = main.emit_tiered_rewrite_if_needed(
+                session,
+                "sid-1",
+                active_segment,
+                self._build_chunk_decision(duration_seconds=30.0),
+            )
+
+        self.assertTrue(emitted)
+        self.assertIs(session["active_segment"], active_segment)
+        self.assertTrue(active_segment["stable_text"].endswith("片段"))
+
     def test_meaningful_activity_rejects_weak_background_packet(self):
         features = self._build_features()
 
