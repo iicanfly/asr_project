@@ -59,7 +59,7 @@ flowchart TD
     O --> P["发 segment_rewrite 覆盖前文"]
     N -->|should_finalize_segment=True| Q["结束当前 segment"]
 
-    U["连续约 3 秒无明显有效活动"] --> V["flush_pending_realtime_buffer"]
+    U["连续约 2 秒无明显有效活动"] --> V["flush_pending_realtime_buffer"]
     V --> W["finalize_active_segment(reason=idle_segment_boundary_timeout)"]
     W --> X["session.active_segment = None"]
     X --> Y["后续再次出现有效说话时创建新的 segment_id"]

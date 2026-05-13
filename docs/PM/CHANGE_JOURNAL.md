@@ -28,9 +28,9 @@
 
 ### 2026-05-13 / Commit 待提交
 - 主题：
-  - 改为“约 3 秒无明显有效活动自动分段”，并补齐 flush-before-finalize 保护。
+  - 改为“约 2 秒无明显有效活动自动分段”，并补齐 flush-before-finalize 保护。
 - 修改内容：
-  - 在 `main.py` 中新增 `IDLE_SEGMENT_SPLIT_SECONDS`，默认值为 `3.0`。
+  - 在 `main.py` 中新增 `IDLE_SEGMENT_SPLIT_SECONDS`，默认值为 `2.0`。
   - `process_idle_realtime_session()` 改为优先处理 idle 分段：先 `flush_pending_realtime_buffer()`，再用 `idle_segment_boundary_timeout` 收尾当前段。
   - 抽出通用 `finalize_active_segment()`，让 stop 收尾与 idle 分段共用同一套 finalize 路径。
   - 在 `tests/test_realtime_tiered_rewrite.py` 中新增“flush 先于 idle 分段 finalize”回归，并保留禁用 idle 分段时的 10 秒 idle high rewrite 回归。
@@ -41,11 +41,11 @@
   - `python -m py_compile main.py services/asr_service.py config.py tools/codex_guard.py tests/test_realtime_tiered_rewrite.py`
   - `python -m unittest tests.test_realtime_tiered_rewrite`
 - 当前结果：
-  - 当前默认行为已变为：约 3 秒无明显有效活动时，自动收尾当前段；后续再次说话时新开下一段。
+  - 当前默认行为已变为：约 2 秒无明显有效活动时，自动收尾当前段；后续再次说话时新开下一段。
 - 用户反馈：
   - 用户明确要求：希望加入分段功能，并优先按“没有明显有效活动”而非简单静音做切段。
 - 后续动作：
-  - 继续用真实录音观察：3 秒边界是否过碎、是否还会出现串段或尾句丢失。
+  - 继续用真实录音观察：2 秒边界是否过碎、是否还会出现串段或尾句丢失。
 
 ### 2026-05-13 / Commit 待提交
 - 主题：
