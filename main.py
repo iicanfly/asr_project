@@ -22,8 +22,10 @@ from services.asr_service import (
     SegmentRewritePolicy,
     add_wav_header,
     build_realtime_chunk_policy,
+    collapse_transcript_text,
     is_effective_text_update,
     load_realtime_chunk_policy_overrides,
+    looks_like_sentence_boundary,
     decide_chunk_processing,
     decide_chunk_processing_simple,
     decide_segment_rewrite,
@@ -78,6 +80,17 @@ def env_float(name: str, default: float) -> float:
         return float(str(raw_value).strip())
     except (TypeError, ValueError):
         logger.warning("Invalid float env %s=%r, falling back to %.2f", name, raw_value, default)
+        return default
+
+
+def env_int(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(str(raw_value).strip())
+    except (TypeError, ValueError):
+        logger.warning("Invalid int env %s=%r, falling back to %s", name, raw_value, default)
         return default
 
 
@@ -298,8 +311,9 @@ DECIDE_REALTIME_CHUNK = decide_chunk_processing_simple if ENABLE_SIMPLIFIED_REAL
 DECIDE_STOP_FLUSH = decide_stop_flush_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_stop_flush
 MEDIUM_REWRITE_SECONDS = env_float("MEDIUM_REWRITE_SECONDS", 6.0)
 HIGH_REWRITE_SECONDS = env_float("HIGH_REWRITE_SECONDS", 30.0)
-IDLE_SEGMENT_SPLIT_SECONDS = env_float("IDLE_SEGMENT_SPLIT_SECONDS", 2.0)
+IDLE_SEGMENT_SPLIT_SECONDS = env_float("IDLE_SEGMENT_SPLIT_SECONDS", 0.0)
 IDLE_HIGH_REWRITE_SECONDS = env_float("IDLE_HIGH_REWRITE_SECONDS", 10.0)
+HIGH_REWRITE_SEGMENT_SPLIT_MIN_CHARS = env_int("HIGH_REWRITE_SEGMENT_SPLIT_MIN_CHARS", 100)
 IDLE_ACTIVITY_MIN_RMS = env_float(
     "IDLE_ACTIVITY_MIN_RMS",
     max(REALTIME_CHUNK_POLICY.active_speech_rms_threshold * 1.05, REALTIME_CHUNK_POLICY.speech_rms_threshold * 0.8),
@@ -554,6 +568,13 @@ def has_displayable_segment_content(active_segment) -> bool:
     )
 
 
+def should_split_segment_after_high_rewrite(committed_text: str) -> bool:
+    dense_text = collapse_transcript_text(committed_text)
+    if len(dense_text) < HIGH_REWRITE_SEGMENT_SPLIT_MIN_CHARS:
+        return False
+    return looks_like_sentence_boundary(committed_text)
+
+
 def build_display_layers(active_segment, result_type: str, *, stage_text: str = "", stable_override: str | None = None) -> tuple[str, str, str]:
     stable_text = active_segment.get("stable_text", "") if stable_override is None else stable_override
     if result_type == "high_rewrite":
@@ -749,8 +770,19 @@ def emit_tiered_rewrite_if_needed(session, sid, active_segment, chunk_decision, 
             finalize_stage=True,
             ensure_sentence_end=False,
         ) or rewrite_emitted
+        if should_split_segment_after_high_rewrite(active_segment.get('stable_text', '')):
+            logger.info(
+                "Starting new segment after high rewrite sid=%s segment=%s committed_chars=%s",
+                sid,
+                active_segment['segment_id'],
+                len(collapse_transcript_text(active_segment.get('stable_text', ''))),
+            )
+            session['active_segment'] = None
+            break
 
     while (
+        session.get('active_segment') is active_segment
+        and
         active_segment.get('stage_duration_seconds', 0.0) >= active_segment.get('next_medium_rewrite_seconds', MEDIUM_REWRITE_SECONDS)
         and active_segment.get('stage_duration_seconds', 0.0) < HIGH_REWRITE_SECONDS
     ):
@@ -767,7 +799,7 @@ def emit_tiered_rewrite_if_needed(session, sid, active_segment, chunk_decision, 
         ) or rewrite_emitted
         active_segment['next_medium_rewrite_seconds'] = threshold_seconds + MEDIUM_REWRITE_SECONDS
 
-    if finalize_segment and (
+    if session.get('active_segment') is active_segment and finalize_segment and (
         active_segment.get('stage_duration_seconds', 0.0) > 0
         or active_segment.get('stable_text')
     ):
@@ -1153,6 +1185,14 @@ def process_idle_realtime_session(session, sid, *, now: float | None = None) -> 
         finalize_stage=True,
         ensure_sentence_end=True,
     )
+    if should_split_segment_after_high_rewrite(active_segment.get('stable_text', '')):
+        logger.info(
+            "Starting new segment after idle high rewrite sid=%s segment=%s committed_chars=%s",
+            sid,
+            active_segment['segment_id'],
+            len(collapse_transcript_text(active_segment.get('stable_text', ''))),
+        )
+        session['active_segment'] = None
     session['last_idle_rewrite_audio_time'] = last_speech_time
     logger.info(
         "Idle high rewrite triggered sid=%s segment=%s speech_idle_seconds=%.2f raw_audio_idle_seconds=%.2f emitted=%s",

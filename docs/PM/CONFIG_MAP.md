@@ -225,8 +225,11 @@
   - `MEDIUM_REWRITE_SECONDS=6.0`
   - 含义：当前三级回写中的 `medium_rewrite` 以约 6 秒为一档滚动触发，而不是旧的 10 秒档。
 - 空闲自动分段：
-  - `IDLE_SEGMENT_SPLIT_SECONDS=2.0`
-  - 含义：当前会话若连续约 2 秒没有明显有效活动，会先 flush 缓冲区，再对当前段做一次收尾并等待下一段。
+  - `IDLE_SEGMENT_SPLIT_SECONDS=0.0`
+  - 含义：当前默认关闭基于空闲活动的自动分段，不再把这条链路作为主分段策略。
+- 高回写后分段：
+  - `HIGH_REWRITE_SEGMENT_SPLIT_MIN_CHARS=100`
+  - 含义：当前会在 `high_rewrite` 完成后检查稳定文本长度；若约满 100 字且像完整句子，就在这里结束当前段。
 - idle 有效活动门槛：
   - `IDLE_ACTIVITY_MIN_RMS=0.0034`
   - `IDLE_ACTIVITY_MIN_PEAK=224`
@@ -235,4 +238,4 @@
   - `IDLE_ACTIVITY_MIN_ACTIVE_RUN_SECONDS=0.09`
   - `IDLE_ACTIVITY_MIN_VOICED_RUN_SECONDS=0.06`
   - `IDLE_ACTIVITY_MIN_VOICED_DENSITY=0.35`
-  - 含义：这组参数只用于判断“是否要刷新 `last_speech_time`”，比 chunk 上传门槛更严格，目的是降低环境音和旁人干扰声把空闲分段计时不断往后拖的概率。
+  - 含义：这组参数现在主要只服务于长空闲兼容收尾，不再承担主分段职责。

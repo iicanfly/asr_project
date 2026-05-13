@@ -28,6 +28,28 @@
 
 ### 2026-05-13 / Commit 待提交
 - 主题：
+  - 改为“高回写后按稳定文本长度 + 句子边界分段”，关闭默认 idle 自动分段。
+- 修改内容：
+  - `IDLE_SEGMENT_SPLIT_SECONDS` 默认改为 `0.0`，不再把空闲活动判断作为主分段依据。
+  - 新增 `HIGH_REWRITE_SEGMENT_SPLIT_MIN_CHARS=100`。
+  - `emit_tiered_rewrite_if_needed()` 在 `high_rewrite` 完成后，会检查稳定文本是否约满 100 字且像完整句子；满足时立即结束当前段，后续新语音再创建新段。
+  - `idle_high_rewrite_timeout` 路径也复用同样的高回写分段规则。
+  - `tests/test_realtime_tiered_rewrite.py` 新增“高回写后够长且句子完整时切段”“虽然够长但句子未收住时不切段”两条回归。
+  - 同步更新 README 与 PM 文档，明确当前主分段策略已从 idle 触发切换到 high rewrite 文本边界触发。
+- 目的：
+  - 避免噪声环境下的活动判断持续把分段时间往后拖，同时利用已经完成高级回写的稳定文本做更可靠的段边界。
+- 验证方式：
+  - `python -m py_compile main.py tests/test_realtime_tiered_rewrite.py`
+  - `python tools/codex_guard.py`
+- 当前结果：
+  - 当前默认不再依赖 2 秒 idle 自动分段，而是等待高回写后的稳定文本达到约 100 字并形成句子边界时再切段。
+- 用户反馈：
+  - 用户明确要求：不要再用噪声环境下不稳定的活动判断做主分段，希望改成“高级回写后字数大于 100 左右再分段”，且不要加超长兜底规则。
+- 后续动作：
+  - 继续用真实录音观察：100 字附近的边界是否自然，是否还存在高回写后继续把完整旧正文拖进新段的现象。
+
+### 2026-05-13 / Commit 待提交
+- 主题：
   - 改为“约 2 秒无明显有效活动自动分段”，并补齐 flush-before-finalize 保护。
 - 修改内容：
   - 在 `main.py` 中新增 `IDLE_SEGMENT_SPLIT_SECONDS`，默认值为 `2.0`。

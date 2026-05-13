@@ -59,10 +59,10 @@ flowchart TD
     O --> P["发 segment_rewrite 覆盖前文"]
     N -->|should_finalize_segment=True| Q["结束当前 segment"]
 
-    U["连续约 2 秒无明显有效活动"] --> V["flush_pending_realtime_buffer"]
-    V --> W["finalize_active_segment(reason=idle_segment_boundary_timeout)"]
-    W --> X["session.active_segment = None"]
-    X --> Y["后续再次出现有效说话时创建新的 segment_id"]
+    U["high_rewrite 完成"] --> V{"稳定文本约满 100 字且像完整句子?"}
+    V -->|是| W["session.active_segment = None"]
+    W --> X["后续再次出现有效说话时创建新的 segment_id"]
+    V -->|否| Y["继续沿用当前 segment_id 累计后续阶段"]
 
     R["用户 stop_recording"] --> S["flush_pending_realtime_buffer"]
     S --> T["finalize_active_segment_on_stop"]
