@@ -42,7 +42,7 @@
   - 只有点击“停止录音”后再次开始/继续录音，才允许新开下一条消息。
 - 三级回写颜色：
   - `partial` 应显示为深橙色。
-  - `medium rewrite` 应显示为深蓝色。
+  - `medium rewrite` 应显示为青绿色。
   - `high rewrite` 应显示为黑色。
   - 新的 partial 到来时，已经进入黑色稳定层的文本不应重新变回橙色。
 - 静音超时自动高级回写：
@@ -389,10 +389,10 @@
   - 同一次录音过程中，无论出现 partial / medium / high，前端都只能维护同一个段落，不应新开第二段。
 - 三级回写颜色：
   - `segment_partial`：深橙色
-  - `medium_rewrite`：深蓝色
+  - `medium_rewrite`：青绿色
   - `high_rewrite`：黑色
 - 录音中回写节奏：
-  - 大约 10 秒附近应至少能看到一次 `medium_rewrite`
+  - 大约 6 秒附近应至少能看到一次 `medium_rewrite`
   - 大约 30 秒附近应至少能看到一次 `high_rewrite`
   - stop 后若还有未提交尾段，应再看到一次 `high_rewrite`
 - 长录音性能：

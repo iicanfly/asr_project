@@ -26,6 +26,54 @@
 
 ## 变更记录
 
+### 2026-05-13 / Commit 待提交
+- 主题：
+  - 下调 partial 与中级回写节奏，并增强中级回写颜色区分度。
+- 修改内容：
+  - 在 `.env` 中新增 `ONLINE_REALTIME_MIN_AUDIO_SECONDS=1.5`，把当前外网 partial 最小时长门槛调到约 1.5 秒。
+  - 在 `.env` 中新增 `MEDIUM_REWRITE_SECONDS=6.0`，并在 `main.py` 中改为从环境变量读取中级回写阈值。
+  - 将 `static/css/style.css` 中 `medium_rewrite` 的颜色从深蓝色调整为青绿色，提高与橙色 partial、黑色 high 的可区分性。
+  - 同步更新 `README.md`、`docs/PM/SESSION_SUMMARY.md`、`docs/PM/TEST_MATRIX.md`、`docs/PM/CONFIG_MAP.md` 的当前状态描述。
+- 目的：
+  - 让 partial 更早出字，让中级回写更早介入，同时降低三层颜色在口测时的混淆成本。
+- 验证方式：
+  - `python -m py_compile main.py services/asr_service.py config.py`
+  - `python tools/codex_guard.py`
+- 当前结果：
+  - 当前外网环境会把 partial 门槛按 1.5 秒生效。
+  - 中级回写默认按 6 秒滚动触发。
+  - 中级回写颜色已切到青绿色。
+- 用户反馈：
+  - 用户明确要求：把 partial 调成 1.5 秒，把中级回写调成 6 秒，并把中级颜色换成和橙色、黑色差别更大的颜色。
+- 后续动作：
+  - 用户下一轮口测时，重点观察：
+    - partial 是否更早出现；
+    - medium 是否更早覆盖；
+    - 青绿色在页面上是否比旧深蓝色更容易区分。
+
+### 2026-05-13 / Commit 待提交
+- 主题：
+  - 把“提交前检查”和“文档同步判断”从口头规则固化成仓库闸门。
+- 修改内容：
+  - 新增 `tools/codex_guard.py`，用于在提交前检查：
+    - 本轮变更涉及哪些文件；
+    - Markdown 文档是否存在疑似损坏；
+    - 实现改动是否至少触发了一次显式文档同步判断。
+  - 新增版本化 `.githooks/pre-commit`，提交时自动运行 `python tools/codex_guard.py --staged`。
+  - 新增 `.gitmessage-codex.txt`，把 `Checks / Docs / Notes` 固化进提交模板。
+  - 更新 `AGENTS.md` 与 `docs/PM/CODEX_PLAYBOOK.md`，把新闸门写入默认工作流。
+- 目的：
+  - 降低“代码已经改完，但忘记提交、忘记检查文档、忘记复核 Markdown 是否损坏”这类流程性失误再次发生的概率。
+- 验证方式：
+  - `python tools/codex_guard.py`
+  - `python tools/codex_guard.py --staged`
+- 当前结果：
+  - 仓库现在具备一层脚本检查和一层 git hook 检查，不再只依赖口头提醒。
+- 用户反馈：
+  - 用户明确要求：不要继续口头保证，要把规则强化到实际行为里。
+- 后续动作：
+  - 配置本仓库本地 `core.hooksPath` 与 `commit.template`，让闸门在当前 clone 立即生效。
+
 ### 2026-05-11 / Commit 待提交
 - 主题：
   - 把“每次修改都要同步维护 md 内容与 md 路由”固化为高优先级长期准则。

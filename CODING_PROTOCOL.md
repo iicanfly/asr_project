@@ -2,5 +2,7 @@
 
 1. 任何由 Codex 产生的代码或配置修改，都必须在本地 Git 仓库提交（commit）。
 2. 每次对话内的有效修改，至少形成一个可回滚的本地提交，确保可以随时 `git revert` 或 `git reset`。
-3. 未经你明确指令，Codex 不执行 `git push`，只做本地版本管理。
-4. 远程仓库默认使用：`origin = https://github.com/iicanfly/asr_project.git`，按你的指令再进行远程同步。
+3. 提交前默认先运行 `python tools/codex_guard.py`；仓库级 `pre-commit` hook 会自动运行 `python tools/codex_guard.py --staged`。
+4. 如果实现改动确认不需要更新 Markdown，必须显式使用 `CODEX_ALLOW_NO_DOC_UPDATE=1`，并在交付说明里写明理由。
+5. 未经你明确指令，Codex 不执行 `git push`，只做本地版本管理。
+6. 远程仓库默认使用：`origin = https://github.com/iicanfly/asr_project.git`，按你的指令再进行远程同步。

@@ -216,3 +216,11 @@
   - 环境专属覆盖优先于通用 `REALTIME_`。
 - 作用：
   - 允许外网和内网在不改代码的前提下使用不同的实时转写门槛。
+
+### 当前已落地的相关调参
+- 外网 partial 触发门槛：
+  - `ONLINE_REALTIME_MIN_AUDIO_SECONDS=1.5`
+  - 含义：当前外网环境下，实时 partial 以约 1.5 秒最小时长作为基础触发门槛。
+- 中级回写节奏：
+  - `MEDIUM_REWRITE_SECONDS=6.0`
+  - 含义：当前三级回写中的 `medium_rewrite` 以约 6 秒为一档滚动触发，而不是旧的 10 秒档。

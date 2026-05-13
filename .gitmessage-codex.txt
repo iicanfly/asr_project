@@ -1,0 +1,12 @@
+<type>: <summary>
+
+Checks:
+- <command>
+
+Docs:
+- updated: <path>
+or
+- not needed: <reason>
+
+Notes:
+- <optional>

@@ -38,8 +38,8 @@
   - 只有点击停止录音后再次开始/继续录音，才会新开下一段
 
 - **三级回写**
-  - `partial`：实时小步结果
-  - `medium rewrite`：中级回写
+  - `partial`：约 1.5 秒级实时小步结果
+  - `medium rewrite`：约 6 秒级中级回写
   - `high rewrite`：高级回写
 
 - **静音 10 秒自动高级回写**
@@ -226,6 +226,9 @@ USE_INTRANET=False
 - 默认每轮有效修改至少形成一次本地 commit
 - 远程 push 只在用户明确要求时执行
 - 项目管理文档与代码一样，属于正式版本管理内容
+- 提交前可先运行 `python tools/codex_guard.py`
+- 仓库级 `pre-commit` hook 会运行 `python tools/codex_guard.py --staged`
+- 如果实现改动确认不需要更新 Markdown，需显式使用 `CODEX_ALLOW_NO_DOC_UPDATE=1`
 
 ---
 

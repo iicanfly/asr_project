@@ -68,6 +68,17 @@ def env_flag(name: str, default: bool = False) -> bool:
     return str(raw_value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_float(name: str, default: float) -> float:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        return float(str(raw_value).strip())
+    except (TypeError, ValueError):
+        logger.warning("Invalid float env %s=%r, falling back to %.2f", name, raw_value, default)
+        return default
+
+
 def get_app_js_version() -> int:
     app_js_path = os.path.join(app.static_folder or "static", "js", "app.js")
     try:
@@ -283,9 +294,9 @@ REALTIME_CHUNK_POLICY, REALTIME_CHUNK_POLICY_OVERRIDES = load_realtime_chunk_pol
 SEGMENT_REWRITE_POLICY = SegmentRewritePolicy()
 DECIDE_REALTIME_CHUNK = decide_chunk_processing_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_chunk_processing
 DECIDE_STOP_FLUSH = decide_stop_flush_simple if ENABLE_SIMPLIFIED_REALTIME_PIPELINE else decide_stop_flush
-MEDIUM_REWRITE_SECONDS = 10.0
-HIGH_REWRITE_SECONDS = 30.0
-IDLE_HIGH_REWRITE_SECONDS = 10.0
+MEDIUM_REWRITE_SECONDS = env_float("MEDIUM_REWRITE_SECONDS", 6.0)
+HIGH_REWRITE_SECONDS = env_float("HIGH_REWRITE_SECONDS", 30.0)
+IDLE_HIGH_REWRITE_SECONDS = env_float("IDLE_HIGH_REWRITE_SECONDS", 10.0)
 
 
 class SessionManager:
