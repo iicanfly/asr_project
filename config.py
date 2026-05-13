@@ -8,7 +8,7 @@ USE_INTRANET = os.getenv('USE_INTRANET', 'False').strip().lower() in ('true', '1
 if not USE_INTRANET:
     API_KEY = os.getenv('ONLINE_API_KEY', '')
     BASE_URL = os.getenv('ONLINE_BASE_URL', '')
-    ASR_MODEL = os.getenv('ONLINE_ASR_MODEL', 'qwen3-asr-flash')
+    ASR_MODEL = os.getenv('ONLINE_ASR_MODEL', 'qwen3-asr-flash-2026-02-10')
     LLM_MODEL = os.getenv('ONLINE_LLM_MODEL', 'qwen-plus-2025-07-28')
     ASR_BASE_URL = os.getenv('ONLINE_ASR_BASE_URL', BASE_URL)
     ASR_API_KEY = os.getenv('ONLINE_ASR_API_KEY', API_KEY)

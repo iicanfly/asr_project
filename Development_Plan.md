@@ -24,7 +24,7 @@
 
 ### 第二阶段：OpenAI 协议适配与双模式重构 (由 AI 执行)
 *   [ ] **任务 2.1**：重构 `config.py`，支持 `USE_INTRANET` 开关及 OpenAI 兼容参数。
-*   [ ] **任务 2.2**：在 `main.py` 中引入 OpenAI SDK，实现 ASR 实时流式转发（对接 qwen3-asr-flash）。
+*   [ ] **任务 2.2**：在 `main.py` 中引入 OpenAI SDK，实现 ASR 实时流式转发（对接 qwen3-asr-flash-2026-02-10）。
 *   [ ] **任务 2.3**：在 `main.py` 中实现 LLM 会议纪要生成逻辑（对接 qwen-plus/qwen3.5）。
 *   [ ] **任务 2.4**：完善 `index.html` 中的 WebSocket 回显逻辑，确保文字实时上屏。
 

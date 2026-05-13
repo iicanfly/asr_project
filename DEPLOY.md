@@ -84,7 +84,7 @@ if not USE_INTRANET:
     # --- 外网开发配置 (阿里云 DashScope) ---
     API_KEY = "sk-4016b26700e2419fb1fdedc04164dbf5"
     BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    ASR_MODEL = "qwen3-asr-flash"
+    ASR_MODEL = "qwen3-asr-flash-2026-02-10"
     LLM_MODEL = "qwen-plus-2025-07-28"
 else:
     # --- 内网部署配置 (私有化部署) ---
