@@ -49,6 +49,26 @@
 
 ### 2026-05-13 / Commit 待提交
 - 主题：
+  - 收紧 idle 分段使用的“有效活动”门槛，降低环境音误续段。
+- 修改内容：
+  - `main.py:contains_meaningful_realtime_activity()` 改为先通过 `describe_usable_speech()` 与 `is_weak_background_audio()` 过滤，再按更严格的 idle 活动阈值刷新 `last_speech_time`。
+  - 新增 `IDLE_ACTIVITY_MIN_*` 系列配置项，并在 `.env` 中显式写出当前默认值。
+  - `tests/test_realtime_tiered_rewrite.py` 新增“弱背景包不应刷新 idle 活动”“低 voiced density 的 soft speech 不应误判为有效活动”两条回归。
+  - 同步更新 `docs/PM/CONFIG_MAP.md` 与 `docs/PM/SESSION_SUMMARY.md` 的当前行为描述。
+- 目的：
+  - 解决真实噪声环境下，用户已停止说话，但 `last_speech_time` 仍不断被环境音/旁人干扰刷新，导致 2 秒自动分段迟迟不触发的问题。
+- 验证方式：
+  - `python -m py_compile main.py tests/test_realtime_tiered_rewrite.py`
+  - `python tools/codex_guard.py`
+- 当前结果：
+  - idle 分段这条线现在比 chunk 上传更保守，更偏向“宁可早点判断空闲，也不要被轻微背景活动一直拖住”。
+- 用户反馈：
+  - 用户明确反馈：当前环境里环境音或周围人的干扰声偏重，导致系统老是被判定成有效活动，2 秒后也不另起新段。
+- 后续动作：
+  - 继续结合真实录音判断是否还需要进一步提高 `IDLE_ACTIVITY_MIN_RMS / PEAK / VOICED_DENSITY`。
+
+### 2026-05-13 / Commit 待提交
+- 主题：
   - 下调 partial 与中级回写节奏，并增强中级回写颜色区分度。
 - 修改内容：
   - 在 `.env` 中新增 `ONLINE_REALTIME_MIN_AUDIO_SECONDS=1.5`，把当前外网 partial 最小时长门槛调到约 1.5 秒。

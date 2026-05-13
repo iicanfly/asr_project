@@ -29,8 +29,10 @@ from services.asr_service import (
     decide_segment_rewrite,
     decide_stop_flush,
     decide_stop_flush_simple,
+    describe_usable_speech,
     extract_audio_features,
     format_asr_display_text,
+    is_weak_background_audio,
     refine_asr_result_text,
     retain_realtime_buffer,
     should_filter_asr_result,
@@ -298,6 +300,38 @@ MEDIUM_REWRITE_SECONDS = env_float("MEDIUM_REWRITE_SECONDS", 6.0)
 HIGH_REWRITE_SECONDS = env_float("HIGH_REWRITE_SECONDS", 30.0)
 IDLE_SEGMENT_SPLIT_SECONDS = env_float("IDLE_SEGMENT_SPLIT_SECONDS", 2.0)
 IDLE_HIGH_REWRITE_SECONDS = env_float("IDLE_HIGH_REWRITE_SECONDS", 10.0)
+IDLE_ACTIVITY_MIN_RMS = env_float(
+    "IDLE_ACTIVITY_MIN_RMS",
+    max(REALTIME_CHUNK_POLICY.active_speech_rms_threshold * 1.05, REALTIME_CHUNK_POLICY.speech_rms_threshold * 0.8),
+)
+IDLE_ACTIVITY_MIN_PEAK = int(
+    round(
+        env_float(
+            "IDLE_ACTIVITY_MIN_PEAK",
+            max(float(REALTIME_CHUNK_POLICY.active_speech_peak_threshold), REALTIME_CHUNK_POLICY.speech_peak_threshold * 0.8),
+        )
+    )
+)
+IDLE_ACTIVITY_MIN_ACTIVE_RATIO = env_float(
+    "IDLE_ACTIVITY_MIN_ACTIVE_RATIO",
+    max(0.2, REALTIME_CHUNK_POLICY.min_active_ratio * 1.5),
+)
+IDLE_ACTIVITY_MIN_VOICED_RATIO = env_float(
+    "IDLE_ACTIVITY_MIN_VOICED_RATIO",
+    max(0.12, REALTIME_CHUNK_POLICY.min_voiced_ratio * 1.5),
+)
+IDLE_ACTIVITY_MIN_ACTIVE_RUN_SECONDS = env_float(
+    "IDLE_ACTIVITY_MIN_ACTIVE_RUN_SECONDS",
+    max(0.08, REALTIME_CHUNK_POLICY.min_active_run_seconds * 0.5),
+)
+IDLE_ACTIVITY_MIN_VOICED_RUN_SECONDS = env_float(
+    "IDLE_ACTIVITY_MIN_VOICED_RUN_SECONDS",
+    max(0.06, REALTIME_CHUNK_POLICY.min_voiced_run_seconds * 0.75),
+)
+IDLE_ACTIVITY_MIN_VOICED_DENSITY = env_float(
+    "IDLE_ACTIVITY_MIN_VOICED_DENSITY",
+    max(0.35, REALTIME_CHUNK_POLICY.min_voiced_density_for_soft_speech * 1.5),
+)
 
 
 class SessionManager:
@@ -398,27 +432,29 @@ def contains_meaningful_realtime_activity(audio_data: bytes) -> bool:
     if features.duration_seconds <= 0:
         return False
 
-    min_packet_rms = max(
-        REALTIME_CHUNK_POLICY.silence_threshold * 1.8,
-        REALTIME_CHUNK_POLICY.active_speech_rms_threshold * 0.65,
-    )
-    min_packet_peak = max(
-        REALTIME_CHUNK_POLICY.peak_threshold + 40,
-        int(REALTIME_CHUNK_POLICY.active_speech_peak_threshold * 0.65),
-    )
-    min_active_run_seconds = max(0.03, REALTIME_CHUNK_POLICY.min_active_run_seconds * 0.2)
-    min_voiced_run_seconds = max(0.02, REALTIME_CHUNK_POLICY.min_voiced_run_seconds * 0.35)
+    speech_reason = describe_usable_speech(features, REALTIME_CHUNK_POLICY)
+    if speech_reason not in {"strong_signal", "sustained_voiced", "sustained_soft_speech"}:
+        return False
+    if is_weak_background_audio(features, REALTIME_CHUNK_POLICY):
+        return False
 
-    has_packet_energy = (
-        features.rms >= min_packet_rms
-        and features.peak >= min_packet_peak
-    )
+    has_packet_energy = features.rms >= IDLE_ACTIVITY_MIN_RMS and features.peak >= IDLE_ACTIVITY_MIN_PEAK
     has_packet_presence = (
-        features.active_ratio >= 0.15
-        or features.max_active_run_seconds >= min_active_run_seconds
-        or features.max_voiced_run_seconds >= min_voiced_run_seconds
+        (
+            features.active_ratio >= IDLE_ACTIVITY_MIN_ACTIVE_RATIO
+            and features.voiced_ratio >= IDLE_ACTIVITY_MIN_VOICED_RATIO
+        )
+        or (
+            features.max_active_run_seconds >= IDLE_ACTIVITY_MIN_ACTIVE_RUN_SECONDS
+            and features.max_voiced_run_seconds >= IDLE_ACTIVITY_MIN_VOICED_RUN_SECONDS
+        )
     )
-    return has_packet_energy and has_packet_presence
+    if not (has_packet_energy and has_packet_presence):
+        return False
+
+    if speech_reason == "sustained_soft_speech":
+        return features.voiced_density >= IDLE_ACTIVITY_MIN_VOICED_DENSITY
+    return True
 
 
 def get_or_create_active_segment(session):

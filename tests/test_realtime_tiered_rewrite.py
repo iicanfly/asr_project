@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import main
-from services.asr_service import ChunkDecision
+from services.asr_service import AudioFeatures, ChunkDecision
 
 
 class RealtimeTieredRewriteTests(unittest.TestCase):
@@ -27,6 +27,30 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
             reason=reason,
             audio_duration_seconds=duration_seconds,
             trailing_silence_detected=False,
+        )
+
+    def _build_features(
+        self,
+        *,
+        rms=0.0035,
+        peak=230,
+        active_ratio=0.22,
+        voiced_ratio=0.14,
+        silence_ratio=0.78,
+        max_active_run_seconds=0.1,
+        max_voiced_run_seconds=0.07,
+        duration_seconds=0.2,
+    ):
+        return AudioFeatures(
+            duration_seconds=duration_seconds,
+            rms=rms,
+            peak=peak,
+            active_ratio=active_ratio,
+            voiced_ratio=voiced_ratio,
+            silence_ratio=silence_ratio,
+            frame_count=12,
+            max_active_run_seconds=max_active_run_seconds,
+            max_voiced_run_seconds=max_voiced_run_seconds,
         )
 
     def test_partial_updates_replace_prior_result(self):
@@ -217,6 +241,23 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
         self.assertEqual(emitted_payloads[0]["text"], "第一段内容")
         self.assertIsNone(session["active_segment"])
         self.assertEqual(session["last_idle_rewrite_audio_time"], 100.0)
+
+    def test_meaningful_activity_rejects_weak_background_packet(self):
+        features = self._build_features()
+
+        with patch.object(main, "extract_audio_features", return_value=features), patch.object(main, "describe_usable_speech", return_value="strong_signal"), patch.object(main, "is_weak_background_audio", return_value=True):
+            self.assertFalse(main.contains_meaningful_realtime_activity(b"\x01\x02" * 3200))
+
+    def test_meaningful_activity_requires_voiced_density_for_soft_speech(self):
+        features = self._build_features(
+            active_ratio=0.3,
+            voiced_ratio=0.06,
+            max_active_run_seconds=0.12,
+            max_voiced_run_seconds=0.06,
+        )
+
+        with patch.object(main, "extract_audio_features", return_value=features), patch.object(main, "describe_usable_speech", return_value="sustained_soft_speech"), patch.object(main, "is_weak_background_audio", return_value=False):
+            self.assertFalse(main.contains_meaningful_realtime_activity(b"\x01\x02" * 3200))
 
 
 if __name__ == "__main__":
