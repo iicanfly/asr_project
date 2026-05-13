@@ -753,7 +753,15 @@ def emit_stage_rewrite(
     return emitted
 
 
-def emit_tiered_rewrite_if_needed(session, sid, active_segment, chunk_decision, *, finalize_segment=False):
+def emit_tiered_rewrite_if_needed(
+    session,
+    sid,
+    active_segment,
+    chunk_decision,
+    *,
+    finalize_segment=False,
+    finalize_processing_reason: str = "stop_recording_finalize_segment",
+):
     if not active_segment:
         return False
 
@@ -809,7 +817,7 @@ def emit_tiered_rewrite_if_needed(session, sid, active_segment, chunk_decision, 
             active_segment,
             chunk_decision,
             result_type="high_rewrite",
-            processing_reason="stop_recording_finalize_segment",
+            processing_reason=finalize_processing_reason,
             finalize_stage=True,
             ensure_sentence_end=True,
         ) or rewrite_emitted
@@ -1026,6 +1034,7 @@ def finalize_active_segment(
         active_segment,
         finalize_chunk_decision,
         finalize_segment=True,
+        finalize_processing_reason=reason,
     )
     logger.info(
         "Finalizing realtime segment sid=%s segment=%s reason=%s chunks=%s duration=%.2fs emitted=%s",

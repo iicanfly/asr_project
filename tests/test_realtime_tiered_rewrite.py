@@ -230,7 +230,7 @@ class RealtimeTieredRewriteTests(unittest.TestCase):
                 call_order.append("emit")
                 emitted_payloads.append(payload)
 
-        with patch.object(main, "flush_pending_realtime_buffer", side_effect=fake_flush), patch.object(main, "transcribe_realtime_chunk", return_value=""), patch.object(main.socketio, "emit", side_effect=fake_emit):
+        with patch.object(main, "IDLE_SEGMENT_SPLIT_SECONDS", 2.0), patch.object(main, "flush_pending_realtime_buffer", side_effect=fake_flush), patch.object(main, "transcribe_realtime_chunk", return_value=""), patch.object(main.socketio, "emit", side_effect=fake_emit):
             emitted = main.process_idle_realtime_session(session, "sid-1", now=103.2)
 
         self.assertTrue(emitted)
