@@ -619,6 +619,7 @@ def has_displayable_segment_content(active_segment) -> bool:
 
 
 SEGMENT_SPLIT_END_PUNCTUATION = "。！？!?；;"
+MIN_SEGMENT_SPLIT_TAIL_CHARS = 6
 
 
 def ends_with_explicit_segment_boundary(text: str) -> bool:
@@ -628,11 +629,30 @@ def ends_with_explicit_segment_boundary(text: str) -> bool:
     return display_text[-1] in SEGMENT_SPLIT_END_PUNCTUATION
 
 
+def has_sufficient_terminal_sentence_for_split(text: str) -> bool:
+    display_text = re.sub(r"\s+", "", str(text or ""))
+    if not display_text or display_text[-1] not in SEGMENT_SPLIT_END_PUNCTUATION:
+        return False
+
+    sentence_body = display_text[:-1]
+    if not sentence_body:
+        return False
+
+    last_boundary_index = -1
+    for punctuation in SEGMENT_SPLIT_END_PUNCTUATION:
+        last_boundary_index = max(last_boundary_index, sentence_body.rfind(punctuation))
+    tail_sentence = sentence_body[last_boundary_index + 1:] if last_boundary_index >= 0 else sentence_body
+    tail_dense_text = collapse_transcript_text(tail_sentence)
+    return len(tail_dense_text) >= MIN_SEGMENT_SPLIT_TAIL_CHARS
+
+
 def should_split_segment_after_high_rewrite(committed_text: str) -> bool:
     dense_text = collapse_transcript_text(committed_text)
     if len(dense_text) < HIGH_REWRITE_SEGMENT_SPLIT_MIN_CHARS:
         return False
-    return ends_with_explicit_segment_boundary(committed_text)
+    if not ends_with_explicit_segment_boundary(committed_text):
+        return False
+    return has_sufficient_terminal_sentence_for_split(committed_text)
 
 
 def build_display_layers(active_segment, result_type: str, *, stage_text: str = "", stable_override: str | None = None) -> tuple[str, str, str]:
